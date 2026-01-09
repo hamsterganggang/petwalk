@@ -10,16 +10,45 @@ class FirebaseService {
   static FirebaseFirestore? firestoreInstance;
   static FirebaseAuth? authInstance;
   static FirebaseStorage? storageInstance;
+  static bool _isInitializing = false;
+  static bool _isInitialized = false;
 
   /// Firebase 서비스 초기화
   /// 
   /// 에러 발생 시에도 앱이 실행되도록 예외 처리를 포함합니다.
   static Future<void> initializeFirebaseServices() async {
+    // 이미 초기화되었거나 초기화 중이면 스킵
+    if (_isInitialized || _isInitializing) {
+      return;
+    }
+
+    _isInitializing = true;
+
     try {
-      // Firebase 초기화
-      firebaseApp = await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
+      // Firebase가 이미 초기화되어 있는지 확인
+      if (Firebase.apps.isEmpty) {
+        // Firebase 초기화
+        firebaseApp = await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+        print('Firebase initialized successfully');
+      } else {
+        // 이미 초기화되어 있으면 기존 앱 사용
+        try {
+          firebaseApp = Firebase.app();
+          print('Firebase already initialized, using existing app');
+        } catch (e) {
+          // DEFAULT 앱이 없는 경우 새로 초기화 시도
+          if (e.toString().contains('No Firebase App')) {
+            firebaseApp = await Firebase.initializeApp(
+              options: DefaultFirebaseOptions.currentPlatform,
+            );
+            print('Firebase initialized after checking existing apps');
+          } else {
+            rethrow;
+          }
+        }
+      }
 
       // Firestore 초기화 및 오프라인 모드 설정
       await setupFirestoreConfig();
@@ -30,10 +59,28 @@ class FirebaseService {
       // Firebase Storage 인스턴스 가져오기
       storageInstance = FirebaseStorage.instance;
 
-      print('Firebase initialized successfully');
+      _isInitialized = true;
     } catch (e) {
-      print('Error initializing Firebase: $e');
+      // 중복 앱 에러는 무시 (이미 초기화된 경우)
+      if (e.toString().contains('duplicate-app') || 
+          e.toString().contains('already exists')) {
+        try {
+          firebaseApp = Firebase.app();
+          authInstance = FirebaseAuth.instance;
+          storageInstance = FirebaseStorage.instance;
+          await setupFirestoreConfig();
+          _isInitialized = true;
+          print('Firebase already initialized, recovered from duplicate error');
+        } catch (recoveryError) {
+          print('Error recovering Firebase: $recoveryError');
+        }
+      } else {
+        print('Error initializing Firebase: $e');
+      }
       // 에러 발생 시에도 앱은 계속 실행됨
+      // 인스턴스가 null이어도 getAuth(), getFirestore() 등에서 자동으로 생성됨
+    } finally {
+      _isInitializing = false;
     }
   }
 
@@ -52,33 +99,25 @@ class FirebaseService {
     } catch (e) {
       print('Error configuring Firestore: $e');
       // 오프라인 모드 활성화 실패 시에도 계속 진행
-      if (firestoreInstance == null) {
-        firestoreInstance = FirebaseFirestore.instance;
-      }
+      firestoreInstance ??= FirebaseFirestore.instance;
     }
   }
 
   /// Firestore 인스턴스 가져오기
   static FirebaseFirestore getFirestore() {
-    if (firestoreInstance == null) {
-      firestoreInstance = FirebaseFirestore.instance;
-    }
+    firestoreInstance ??= FirebaseFirestore.instance;
     return firestoreInstance!;
   }
 
   /// Firebase Auth 인스턴스 가져오기
   static FirebaseAuth getAuth() {
-    if (authInstance == null) {
-      authInstance = FirebaseAuth.instance;
-    }
+    authInstance ??= FirebaseAuth.instance;
     return authInstance!;
   }
 
   /// Firebase Storage 인스턴스 가져오기
   static FirebaseStorage getStorage() {
-    if (storageInstance == null) {
-      storageInstance = FirebaseStorage.instance;
-    }
+    storageInstance ??= FirebaseStorage.instance;
     return storageInstance!;
   }
 

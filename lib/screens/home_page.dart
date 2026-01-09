@@ -3,8 +3,13 @@ import '../providers/user_auth_state.dart';
 import '../services/google_signin_handler.dart';
 import '../utils/theme_config.dart';
 import 'signin_page.dart';
+import 'home_tab.dart';
+import 'pets_tab.dart';
+import 'walks_tab.dart';
+import 'social_tab.dart';
+import 'profile_tab.dart';
 
-/// 홈 화면 (로그인 후 메인 화면)
+/// 메인 네비게이션 화면 (로그인 후 메인 화면)
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -15,6 +20,16 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final UserAuthState _authState = UserAuthState();
   final GoogleSignInHandler _googleSignInHandler = GoogleSignInHandler();
+  
+  int _currentIndex = 0;
+
+  final List<Widget> _tabs = [
+    const HomeTab(),
+    const PetsTab(),
+    const WalksTab(),
+    const SocialTab(),
+    const ProfileTab(),
+  ];
 
   @override
   void initState() {
@@ -77,80 +92,48 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// 탭 변경 처리
+  void _onTabTapped(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final user = _authState.currentUser;
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('PetWalk'),
-        actions: [
-          // 사용자 프로필 사진 또는 아이콘
-          if (user?.photoURL != null)
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: CircleAvatar(
-                backgroundImage: NetworkImage(user!.photoURL!),
-                radius: 16,
-              ),
-            )
-          else
-            const Padding(
-              padding: EdgeInsets.all(8.0),
-              child: Icon(Icons.person),
-            ),
-          // 로그아웃 버튼
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _handleLogout,
-            tooltip: '로그아웃',
+      body: _tabs[_currentIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
+        currentIndex: _currentIndex,
+        onTap: _onTabTapped,
+        selectedItemColor: AppColors.primaryGreen,
+        unselectedItemColor: AppColors.textSecondary,
+        selectedLabelStyle: const TextStyle(
+          fontWeight: FontWeight.w600,
+        ),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: '홈',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.pets),
+            label: '반려동물',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.directions_walk),
+            label: '산책',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.people),
+            label: '소셜',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: '사용자',
           ),
         ],
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // 사용자 정보 표시
-            if (user?.photoURL != null)
-              CircleAvatar(
-                backgroundImage: NetworkImage(user!.photoURL!),
-                radius: 50,
-              )
-            else
-              const Icon(
-                Icons.person,
-                size: 100,
-                color: AppColors.primaryGreen,
-              ),
-            const SizedBox(height: 24),
-            Text(
-              '환영합니다!',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 8),
-            if (user?.displayName != null)
-              Text(
-                user!.displayName!,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-            if (user?.email != null)
-              Text(
-                user!.email!,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-              ),
-            const SizedBox(height: 48),
-            const Text(
-              '반려동물 산책 관리를 시작하세요!',
-              style: TextStyle(
-                fontSize: 16,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

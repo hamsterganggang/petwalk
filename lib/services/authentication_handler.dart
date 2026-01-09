@@ -157,29 +157,40 @@ class UserAuthenticationService {
   }
 
   /// 에러 처리 및 사용자 친화적 메시지 반환
-  String _handleAuthError(dynamic error) {
+  Exception _handleAuthError(dynamic error) {
+    String message;
     if (error is FirebaseAuthException) {
       switch (error.code) {
         case 'user-disabled':
-          return '이 계정은 비활성화되었습니다.';
+          message = '이 계정은 비활성화되었습니다.';
+          break;
         case 'invalid-credential':
-          return '로그인 정보가 올바르지 않습니다.';
+          message = '로그인 정보가 올바르지 않습니다.';
+          break;
         case 'operation-not-allowed':
-          return '이 로그인 방법은 허용되지 않습니다.';
+          message = '이 로그인 방법은 허용되지 않습니다.';
+          break;
         case 'weak-password':
-          return '비밀번호가 너무 약합니다.';
+          message = '비밀번호가 너무 약합니다.';
+          break;
         case 'email-already-in-use':
-          return '이 이메일은 이미 사용 중입니다.';
+          message = '이 이메일은 이미 사용 중입니다.';
+          break;
         case 'user-not-found':
-          return '사용자를 찾을 수 없습니다.';
+          message = '사용자를 찾을 수 없습니다.';
+          break;
         case 'wrong-password':
-          return '비밀번호가 올바르지 않습니다.';
+          message = '비밀번호가 올바르지 않습니다.';
+          break;
         case 'network-request-failed':
-          return '네트워크 연결을 확인해주세요.';
+          message = '네트워크 연결을 확인해주세요.';
+          break;
         default:
-          return '로그인 중 오류가 발생했습니다: ${error.message}';
+          message = '로그인 중 오류가 발생했습니다: ${error.message ?? error.code}';
       }
+    } else {
+      message = '알 수 없는 오류가 발생했습니다: $error';
     }
-    return '알 수 없는 오류가 발생했습니다: $error';
+    return Exception(message);
   }
 }
