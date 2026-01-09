@@ -19,7 +19,8 @@ class UserAuthenticationService {
   /// 구글 로그인
   /// 
   /// [googleIdToken]과 [googleAccessToken]을 받아서 Firebase Auth에 인증
-  Future<UserCredential> signInWithGoogle({
+  /// 반환값: (UserCredential, isNewUser)
+  Future<Map<String, dynamic>> signInWithGoogle({
     required String googleIdToken,
     required String googleAccessToken,
   }) async {
@@ -32,12 +33,16 @@ class UserAuthenticationService {
 
       final userCredential = await _auth.signInWithCredential(credential);
       
-      // 로그인 성공 시 Firestore에 사용자 정보 저장
+      // 로그인 성공 시 Firestore에 사용자 정보 저장 및 신규 사용자 여부 확인
+      bool isNew = false;
       if (userCredential.user != null) {
-        await _saveUserToFirestore(userCredential.user!);
+        isNew = await _saveUserToFirestore(userCredential.user!);
       }
 
-      return userCredential;
+      return {
+        'userCredential': userCredential,
+        'isNewUser': isNew,
+      };
     } catch (e) {
       throw _handleAuthError(e);
     }
@@ -104,12 +109,14 @@ class UserAuthenticationService {
   }
 
   /// Firestore에 사용자 정보 저장
-  Future<void> _saveUserToFirestore(User user) async {
+  /// 반환값: 신규 사용자인지 여부 (true: 신규, false: 기존)
+  Future<bool> _saveUserToFirestore(User user) async {
     try {
       final userDoc = _firestore.collection('users').doc(user.uid);
       
       // 사용자 문서가 이미 존재하는지 확인
       final docSnapshot = await userDoc.get();
+      final isNew = !docSnapshot.exists;
       
       if (!docSnapshot.exists) {
         // 새 사용자인 경우 문서 생성
@@ -130,9 +137,52 @@ class UserAuthenticationService {
           'updatedAt': FieldValue.serverTimestamp(),
         });
       }
+      
+      return isNew;
     } catch (e) {
       print('Error saving user to Firestore: $e');
       // Firestore 저장 실패해도 로그인은 성공으로 처리
+      return false;
+    }
+  }
+
+  /// 사용자 닉네임 업데이트
+  Future<void> updateUserNickname(String nickname) async {
+    try {
+      final user = currentUser;
+      if (user == null) {
+        throw Exception('로그인이 필요합니다.');
+      }
+
+      // Firebase Auth에 닉네임 설정
+      await user.updateDisplayName(nickname);
+      await user.reload();
+
+      // Firestore에 닉네임 저장
+      final userDoc = _firestore.collection('users').doc(user.uid);
+      await userDoc.update({
+        'displayName': nickname,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      throw _handleAuthError(e);
+    }
+  }
+
+  /// 사용자가 신규 사용자인지 확인 (Firestore에 문서가 없으면 신규)
+  Future<bool> isNewUser() async {
+    try {
+      final user = currentUser;
+      if (user == null) {
+        return false;
+      }
+
+      final userDoc = _firestore.collection('users').doc(user.uid);
+      final docSnapshot = await userDoc.get();
+      return !docSnapshot.exists;
+    } catch (e) {
+      print('Error checking if new user: $e');
+      return false;
     }
   }
 
