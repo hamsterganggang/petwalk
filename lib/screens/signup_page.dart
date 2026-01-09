@@ -27,6 +27,7 @@ class _SignUpPageState extends State<SignUpPage> {
   bool _obscureConfirmPassword = true;
   String? _errorMessage;
   StreamSubscription<User?>? _authStateSubscription;
+  bool _isSettingNickname = false; // 닉네임 설정 중인지 여부
 
   @override
   void initState() {
@@ -34,7 +35,8 @@ class _SignUpPageState extends State<SignUpPage> {
     // 인증 상태 변경 리스너 등록
     _authStateSubscription = _authService.authStateChanges.listen(
       (User? user) {
-        if (user != null && mounted) {
+        // 닉네임 설정 중이면 자동 이동하지 않음
+        if (user != null && mounted && !_isSettingNickname) {
           // 회원가입 성공 시 홈 화면으로 이동
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (_) => const HomePage()),
@@ -73,15 +75,17 @@ class _SignUpPageState extends State<SignUpPage> {
       
       // 회원가입 성공 후 닉네임 설정 다이얼로그 표시
       if (mounted) {
+        setState(() {
+          _isSettingNickname = true; // 닉네임 설정 시작
+        });
         await _showNicknameDialog();
       }
-      // 회원가입 성공 시 authStateChanges 리스너에서 자동으로 홈 화면으로 이동
-      // 로딩 상태는 Stream 리스너에서 자동으로 해제됨
     } catch (e) {
       if (mounted) {
         setState(() {
           _errorMessage = e.toString().replaceAll('Exception: ', '');
           _isLoading = false;
+          _isSettingNickname = false; // 에러 발생 시 플래그 해제
         });
       }
     }
@@ -99,15 +103,17 @@ class _SignUpPageState extends State<SignUpPage> {
       
       // 구글 로그인 성공 후 신규 사용자인 경우 닉네임 설정 다이얼로그 표시
       if (mounted && isNew) {
+        setState(() {
+          _isSettingNickname = true; // 닉네임 설정 시작
+        });
         await _showNicknameDialog();
       }
-      // 회원가입 성공 시 authStateChanges 리스너에서 자동으로 홈 화면으로 이동
-      // 로딩 상태는 Stream 리스너에서 자동으로 해제됨
     } catch (e) {
       if (mounted) {
         setState(() {
           _errorMessage = e.toString().replaceAll('Exception: ', '');
           _isLoading = false;
+          _isSettingNickname = false; // 에러 발생 시 플래그 해제
         });
       }
     }
@@ -117,78 +123,125 @@ class _SignUpPageState extends State<SignUpPage> {
   Future<void> _showNicknameDialog() async {
     final nicknameController = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    bool isChecking = false;
+    String? duplicateError;
     
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('닉네임 설정'),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                '사용할 닉네임을 입력해주세요.',
-                style: TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: nicknameController,
-                autofocus: true,
-                maxLength: 20,
-                decoration: const InputDecoration(
-                  labelText: '닉네임 *',
-                  hintText: '닉네임을 입력하세요',
-                  counterText: '',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('닉네임 설정'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '사용할 닉네임을 입력해주세요.',
+                  style: TextStyle(fontSize: 14),
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return '닉네임을 입력해주세요.';
-                  }
-                  if (value.trim().length < 2) {
-                    return '닉네임은 2자 이상이어야 합니다.';
-                  }
-                  if (value.trim().length > 20) {
-                    return '닉네임은 20자 이하여야 합니다.';
-                  }
-                  return null;
-                },
-              ),
-            ],
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: nicknameController,
+                  autofocus: true,
+                  maxLength: 20,
+                  enabled: !isChecking,
+                  decoration: const InputDecoration(
+                    labelText: '닉네임 *',
+                    hintText: '닉네임을 입력하세요',
+                    counterText: '',
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return '닉네임을 입력해주세요.';
+                    }
+                    if (value.trim().length < 2) {
+                      return '닉네임은 2자 이상이어야 합니다.';
+                    }
+                    if (value.trim().length > 20) {
+                      return '닉네임은 20자 이하여야 합니다.';
+                    }
+                    if (duplicateError != null) {
+                      return duplicateError;
+                    }
+                    return null;
+                  },
+                  onChanged: (value) {
+                    // 입력이 변경되면 중복 에러 초기화
+                    if (duplicateError != null) {
+                      setDialogState(() {
+                        duplicateError = null;
+                      });
+                      formKey.currentState?.validate();
+                    }
+                  },
+                ),
+                if (isChecking)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8.0),
+                    child: SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+              ],
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              if (formKey.currentState!.validate()) {
-                try {
-                  await _authService.updateUserNickname(
-                    nicknameController.text.trim(),
-                  );
-                  if (mounted) {
-                    Navigator.of(context).pop(); // 다이얼로그 닫기
-                    // 홈 화면으로 이동
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const HomePage()),
-                      (route) => false,
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(e.toString().replaceAll('Exception: ', '')),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
+          actions: [
+            TextButton(
+              onPressed: isChecking ? null : () async {
+                if (formKey.currentState!.validate()) {
+                  setDialogState(() {
+                    isChecking = true;
+                    duplicateError = null;
+                  });
+
+                  try {
+                    final nickname = nicknameController.text.trim();
+                    
+                    // 닉네임 중복 체크
+                    final isAvailable = await _authService.checkNicknameAvailability(nickname);
+                    
+                    if (!isAvailable) {
+                      setDialogState(() {
+                        isChecking = false;
+                        duplicateError = '이미 사용 중인 닉네임입니다.';
+                      });
+                      formKey.currentState?.validate();
+                      return;
+                    }
+
+                    // 닉네임 저장
+                    await _authService.updateUserNickname(nickname);
+                    
+                    if (mounted) {
+                      Navigator.of(context).pop(); // 다이얼로그 닫기
+                      // 로딩 상태 해제 및 닉네임 설정 완료
+                      setState(() {
+                        _isLoading = false;
+                        _isSettingNickname = false; // 닉네임 설정 완료
+                      });
+                      // 홈 화면으로 이동
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const HomePage()),
+                        (route) => false,
+                      );
+                    }
+                  } catch (e) {
+                    setDialogState(() {
+                      isChecking = false;
+                      duplicateError = e.toString().replaceAll('Exception: ', '');
+                    });
+                    formKey.currentState?.validate();
                   }
                 }
-              }
-            },
-            child: const Text('확인'),
-          ),
-        ],
+              },
+              child: const Text('확인'),
+            ),
+          ],
+        ),
       ),
     );
     
