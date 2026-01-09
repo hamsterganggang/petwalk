@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 import 'utils/theme_config.dart';
+import 'services/firebase_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Firebase 초기화 (에러 발생 시에도 앱 실행)
+  await FirebaseService.initializeFirebaseServices();
+  
   runApp(const MyApp());
 }
 

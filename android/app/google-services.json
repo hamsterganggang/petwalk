@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "125120646156",
+    "project_id": "petwalk-14a2a",
+    "storage_bucket": "petwalk-14a2a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:125120646156:android:ebb73396820493dda4f229",
+        "android_client_info": {
+          "package_name": "com.example.petwalk"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDZEn9-Wj7K__4uH6fZOsGXIejBr1ZXL-U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
