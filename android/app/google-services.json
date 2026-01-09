@@ -12,7 +12,20 @@
           "package_name": "com.example.petwalk"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "125120646156-8mpfvkoj0q3heh65fiiim5mnbg1e3ctd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.petwalk",
+            "certificate_hash": "7a6608e5771228833781588e573f44863d4c829d"
+          }
+        },
+        {
+          "client_id": "125120646156-sjva9r9elhe2tjikff2sbstmm1bia8vg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDZEn9-Wj7K__4uH6fZOsGXIejBr1ZXL-U"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "125120646156-sjva9r9elhe2tjikff2sbstmm1bia8vg.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
