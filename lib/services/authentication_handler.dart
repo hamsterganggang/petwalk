@@ -43,6 +43,66 @@ class UserAuthenticationService {
     }
   }
 
+  /// 이메일/비밀번호로 회원가입
+  Future<UserCredential> signUpWithEmail({
+    required String email,
+    required String password,
+    String? displayName,
+  }) async {
+    try {
+      final userCredential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      // 회원가입 성공 시 사용자 이름 설정 (있는 경우)
+      if (displayName != null && displayName.isNotEmpty && userCredential.user != null) {
+        await userCredential.user!.updateDisplayName(displayName);
+        await userCredential.user!.reload();
+      }
+
+      // Firestore에 사용자 정보 저장
+      if (userCredential.user != null) {
+        await _saveUserToFirestore(userCredential.user!);
+      }
+
+      return userCredential;
+    } catch (e) {
+      throw _handleAuthError(e);
+    }
+  }
+
+  /// 이메일/비밀번호로 로그인
+  Future<UserCredential> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final userCredential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      // 로그인 성공 시 Firestore에 사용자 정보 업데이트
+      if (userCredential.user != null) {
+        await _saveUserToFirestore(userCredential.user!);
+      }
+
+      return userCredential;
+    } catch (e) {
+      throw _handleAuthError(e);
+    }
+  }
+
+  /// 비밀번호 재설정 이메일 전송
+  Future<void> sendPasswordResetEmail(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } catch (e) {
+      throw _handleAuthError(e);
+    }
+  }
+
   /// Firestore에 사용자 정보 저장
   Future<void> _saveUserToFirestore(User user) async {
     try {
