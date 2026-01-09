@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../utils/theme_config.dart';
+import 'animal_list_view.dart';
 
 /// 반려동물 탭 화면
 class PetsTab extends StatelessWidget {
@@ -12,35 +13,7 @@ class PetsTab extends StatelessWidget {
         title: const Text('반려동물'),
         automaticallyImplyLeading: false,
       ),
-      body: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.pets,
-              size: 80,
-              color: AppColors.primaryGreen,
-            ),
-            SizedBox(height: 24),
-            Text(
-              '반려동물 화면',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark,
-              ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              '내용을 추가하세요',
-              style: TextStyle(
-                fontSize: 16,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
+      body: const AnimalListView(),
     );
   }
 }

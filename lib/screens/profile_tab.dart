@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../utils/theme_config.dart';
+import 'profile_view.dart';
 
 /// 사용자 탭 화면
 class ProfileTab extends StatelessWidget {
@@ -12,35 +13,7 @@ class ProfileTab extends StatelessWidget {
         title: const Text('사용자'),
         automaticallyImplyLeading: false,
       ),
-      body: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.person,
-              size: 80,
-              color: AppColors.primaryGreen,
-            ),
-            SizedBox(height: 24),
-            Text(
-              '사용자 화면',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark,
-              ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              '내용을 추가하세요',
-              style: TextStyle(
-                fontSize: 16,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
+      body: const ProfileView(),
     );
   }
 }
