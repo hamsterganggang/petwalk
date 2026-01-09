@@ -1,37 +1,40 @@
 import 'package:flutter/material.dart';
-import '../services/google_signin_handler.dart';
 import '../services/authentication_handler.dart';
 import '../utils/theme_config.dart';
-import 'signup_page.dart';
+import 'signin_page.dart';
 
-/// 로그인 화면
-class SignInPage extends StatefulWidget {
-  const SignInPage({super.key});
+/// 회원가입 화면
+class SignUpPage extends StatefulWidget {
+  const SignUpPage({super.key});
 
   @override
-  State<SignInPage> createState() => _SignInPageState();
+  State<SignUpPage> createState() => _SignUpPageState();
 }
 
-class _SignInPageState extends State<SignInPage> {
-  final GoogleSignInHandler _googleSignInHandler = GoogleSignInHandler();
+class _SignUpPageState extends State<SignUpPage> {
   final UserAuthenticationService _authService = UserAuthenticationService();
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   String? _errorMessage;
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  /// 이메일/비밀번호 로그인
-  Future<void> _handleEmailSignIn() async {
+  /// 회원가입 처리
+  Future<void> _handleSignUp() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -42,74 +45,40 @@ class _SignInPageState extends State<SignInPage> {
     });
 
     try {
-      await _authService.signInWithEmail(
+      await _authService.signUpWithEmail(
         email: _emailController.text.trim(),
         password: _passwordController.text,
+        displayName: _nameController.text.trim().isNotEmpty
+            ? _nameController.text.trim()
+            : null,
       );
-      // 로그인 성공 시 자동으로 홈 화면으로 이동
-    } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
-        _isLoading = false;
-      });
-    }
-  }
-
-  /// 구글 로그인 실행
-  Future<void> _handleGoogleSignIn() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      await _googleSignInHandler.signInWithGoogle();
-      // 로그인 성공 시 자동으로 홈 화면으로 이동
-    } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
-        _isLoading = false;
-      });
-    }
-  }
-
-  /// 비밀번호 재설정
-  Future<void> _handleForgotPassword() async {
-    if (_emailController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('이메일을 입력해주세요.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    try {
-      await _authService.sendPasswordResetEmail(_emailController.text.trim());
+      
+      // 회원가입 성공 시 로그인 화면으로 이동
       if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const SignInPage()),
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('비밀번호 재설정 이메일을 전송했습니다.'),
+            content: Text('회원가입이 완료되었습니다. 로그인해주세요.'),
             backgroundColor: AppColors.primaryGreen,
           ),
         );
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      setState(() {
+        _errorMessage = e.toString().replaceAll('Exception: ', '');
+        _isLoading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('회원가입'),
+      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -120,20 +89,20 @@ class _SignInPageState extends State<SignInPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // 앱 로고/아이콘 영역
+                  // 앱 로고
                   const Icon(
                     Icons.pets,
-                    size: 100,
+                    size: 80,
                     color: AppColors.primaryGreen,
                   ),
                   const SizedBox(height: 32),
 
-                  // 앱 제목
+                  // 제목
                   const Text(
-                    'PetWalk',
+                    '회원가입',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 36,
+                      fontSize: 28,
                       fontWeight: FontWeight.bold,
                       color: AppColors.primaryGreen,
                     ),
@@ -142,14 +111,14 @@ class _SignInPageState extends State<SignInPage> {
 
                   // 부제목
                   const Text(
-                    '반려동물 산책 관리 앱',
+                    'PetWalk에 오신 것을 환영합니다',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 14,
                       color: AppColors.textSecondary,
                     ),
                   ),
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 32),
 
                   // 에러 메시지 표시
                   if (_errorMessage != null)
@@ -178,6 +147,18 @@ class _SignInPageState extends State<SignInPage> {
                       ),
                     ),
 
+                  // 이름 입력 필드
+                  TextFormField(
+                    controller: _nameController,
+                    enabled: !_isLoading,
+                    decoration: const InputDecoration(
+                      labelText: '이름 (선택사항)',
+                      hintText: '홍길동',
+                      prefixIcon: Icon(Icons.person),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
                   // 이메일 입력 필드
                   TextFormField(
                     controller: _emailController,
@@ -192,7 +173,7 @@ class _SignInPageState extends State<SignInPage> {
                       if (value == null || value.trim().isEmpty) {
                         return '이메일을 입력해주세요.';
                       }
-                      if (!value.contains('@')) {
+                      if (!value.contains('@') || !value.contains('.')) {
                         return '올바른 이메일 형식이 아닙니다.';
                       }
                       return null;
@@ -207,7 +188,7 @@ class _SignInPageState extends State<SignInPage> {
                     enabled: !_isLoading,
                     decoration: InputDecoration(
                       labelText: '비밀번호',
-                      hintText: '비밀번호를 입력하세요',
+                      hintText: '6자 이상 입력하세요',
                       prefixIcon: const Icon(Icons.lock),
                       suffixIcon: IconButton(
                         icon: Icon(
@@ -232,24 +213,45 @@ class _SignInPageState extends State<SignInPage> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
 
-                  // 비밀번호 찾기
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: _isLoading ? null : _handleForgotPassword,
-                      child: const Text(
-                        '비밀번호를 잊으셨나요?',
-                        style: TextStyle(fontSize: 12),
+                  // 비밀번호 확인 입력 필드
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    obscureText: _obscureConfirmPassword,
+                    enabled: !_isLoading,
+                    decoration: InputDecoration(
+                      labelText: '비밀번호 확인',
+                      hintText: '비밀번호를 다시 입력하세요',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureConfirmPassword
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscureConfirmPassword = !_obscureConfirmPassword;
+                          });
+                        },
                       ),
                     ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return '비밀번호 확인을 입력해주세요.';
+                      }
+                      if (value != _passwordController.text) {
+                        return '비밀번호가 일치하지 않습니다.';
+                      }
+                      return null;
+                    },
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 32),
 
-                  // 이메일 로그인 버튼
+                  // 회원가입 버튼
                   ElevatedButton(
-                    onPressed: _isLoading ? null : _handleEmailSignIn,
+                    onPressed: _isLoading ? null : _handleSignUp,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
@@ -263,64 +265,21 @@ class _SignInPageState extends State<SignInPage> {
                             ),
                           )
                         : const Text(
-                            '로그인',
+                            '회원가입',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
                   ),
-                  const SizedBox(height: 16),
-
-                  // 구분선
-                  Row(
-                    children: [
-                      Expanded(child: Divider(color: Colors.grey[300])),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          '또는',
-                          style: TextStyle(color: Colors.grey[600]),
-                        ),
-                      ),
-                      Expanded(child: Divider(color: Colors.grey[300])),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 구글 로그인 버튼
-                  ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _handleGoogleSignIn,
-                    icon: const Icon(Icons.login, size: 20),
-                    label: const Text(
-                      '구글로 로그인',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: AppColors.textDark,
-                      elevation: 2,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 16,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(color: Colors.grey[300]!),
-                      ),
-                    ),
-                  ),
                   const SizedBox(height: 24),
 
-                  // 회원가입 링크
+                  // 로그인 링크
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Text(
-                        '계정이 없으신가요? ',
+                        '이미 계정이 있으신가요? ',
                         style: TextStyle(
                           fontSize: 14,
                           color: AppColors.textSecondary,
@@ -330,14 +289,10 @@ class _SignInPageState extends State<SignInPage> {
                         onPressed: _isLoading
                             ? null
                             : () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => const SignUpPage(),
-                                  ),
-                                );
+                                Navigator.of(context).pop();
                               },
                         child: const Text(
-                          '회원가입',
+                          '로그인',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
