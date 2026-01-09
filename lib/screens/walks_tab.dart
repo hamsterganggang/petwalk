@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import '../utils/theme_config.dart';
+import 'walk_map_view.dart';
+import 'walk_history_list.dart';
+import 'statistics_view.dart';
 
-/// 산책 탭 화면
 class WalksTab extends StatelessWidget {
   const WalksTab({super.key});
 
@@ -10,33 +11,92 @@ class WalksTab extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('산책'),
-        automaticallyImplyLeading: false,
       ),
-      body: const Center(
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(
-              Icons.directions_walk,
-              size: 80,
-              color: AppColors.primaryGreen,
-            ),
-            SizedBox(height: 24),
-            Text(
-              '산책 화면',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark,
+            _buildMenuCard(
+              context,
+              title: '산책 시작하기',
+              subtitle: '반려견과 함께 즐거운 산책을 떠나보세요',
+              icon: Icons.directions_walk,
+              color: Theme.of(context).primaryColor,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const WalkMapView()),
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildMenuCard(
+                    context,
+                    title: '산책 기록',
+                    subtitle: '지난 기록 보기',
+                    icon: Icons.history,
+                    color: Colors.orange,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const WalkHistoryList()),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildMenuCard(
+                    context,
+                    title: '산책 통계',
+                    subtitle: '활동 분석',
+                    icon: Icons.bar_chart,
+                    color: Colors.blue,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const StatisticsView()),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuCard(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 32),
+            const SizedBox(height: 12),
             Text(
-              '내용을 추가하세요',
-              style: TextStyle(
-                fontSize: 16,
-                color: AppColors.textSecondary,
-              ),
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],
         ),
