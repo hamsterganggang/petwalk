@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../services/authentication_handler.dart';
+import '../services/google_signin_handler.dart';
 import '../utils/theme_config.dart';
 import 'signin_page.dart';
+import 'home_page.dart';
 
 /// 회원가입 화면
 class SignUpPage extends StatefulWidget {
@@ -13,6 +17,7 @@ class SignUpPage extends StatefulWidget {
 
 class _SignUpPageState extends State<SignUpPage> {
   final UserAuthenticationService _authService = UserAuthenticationService();
+  final GoogleSignInHandler _googleSignInHandler = GoogleSignInHandler();
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -23,9 +28,28 @@ class _SignUpPageState extends State<SignUpPage> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   String? _errorMessage;
+  StreamSubscription<User?>? _authStateSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // 인증 상태 변경 리스너 등록
+    _authStateSubscription = _authService.authStateChanges.listen(
+      (User? user) {
+        if (user != null && mounted) {
+          // 회원가입 성공 시 홈 화면으로 이동
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HomePage()),
+            (route) => false,
+          );
+        }
+      },
+    );
+  }
 
   @override
   void dispose() {
+    _authStateSubscription?.cancel();
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -33,8 +57,8 @@ class _SignUpPageState extends State<SignUpPage> {
     super.dispose();
   }
 
-  /// 회원가입 처리
-  Future<void> _handleSignUp() async {
+  /// 이메일 회원가입 처리
+  Future<void> _handleEmailSignUp() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -52,24 +76,36 @@ class _SignUpPageState extends State<SignUpPage> {
             ? _nameController.text.trim()
             : null,
       );
-      
-      // 회원가입 성공 시 로그인 화면으로 이동
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const SignInPage()),
-        );
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('회원가입이 완료되었습니다. 로그인해주세요.'),
-            backgroundColor: AppColors.primaryGreen,
-          ),
-        );
-      }
+      // 회원가입 성공 시 authStateChanges 리스너에서 자동으로 홈 화면으로 이동
+      // 로딩 상태는 Stream 리스너에서 자동으로 해제됨
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  /// 구글 회원가입 처리
+  Future<void> _handleGoogleSignUp() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await _googleSignInHandler.signInWithGoogle();
+      // 회원가입 성공 시 authStateChanges 리스너에서 자동으로 홈 화면으로 이동
+      // 로딩 상태는 Stream 리스너에서 자동으로 해제됨
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -249,9 +285,9 @@ class _SignUpPageState extends State<SignUpPage> {
                   ),
                   const SizedBox(height: 32),
 
-                  // 회원가입 버튼
+                  // 이메일 회원가입 버튼
                   ElevatedButton(
-                    onPressed: _isLoading ? null : _handleSignUp,
+                    onPressed: _isLoading ? null : _handleEmailSignUp,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
@@ -265,12 +301,55 @@ class _SignUpPageState extends State<SignUpPage> {
                             ),
                           )
                         : const Text(
-                            '회원가입',
+                            '이메일로 회원가입',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 구분선
+                  Row(
+                    children: [
+                      Expanded(child: Divider(color: Colors.grey[300])),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          '또는',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      ),
+                      Expanded(child: Divider(color: Colors.grey[300])),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 구글 회원가입 버튼
+                  ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _handleGoogleSignUp,
+                    icon: const Icon(Icons.login, size: 20),
+                    label: const Text(
+                      '구글로 회원가입',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: AppColors.textDark,
+                      elevation: 2,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(color: Colors.grey[300]!),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 24),
 
