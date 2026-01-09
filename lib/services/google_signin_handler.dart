@@ -19,7 +19,8 @@ class GoogleSignInHandler {
   final UserAuthenticationService _authService = UserAuthenticationService();
 
   /// 구글 로그인 실행
-  Future<void> signInWithGoogle() async {
+  /// 반환값: 신규 사용자인지 여부
+  Future<bool> signInWithGoogle() async {
     try {
       // Google Sign-In 실행
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
@@ -44,10 +45,12 @@ class GoogleSignInHandler {
       }
 
       // Firebase Auth에 로그인
-      await _authService.signInWithGoogle(
+      final result = await _authService.signInWithGoogle(
         googleIdToken: googleAuth.idToken!,
         googleAccessToken: googleAuth.accessToken!,
       );
+      
+      return result['isNewUser'] as bool;
     } on PlatformException catch (e) {
       // PlatformException 처리
       String errorMessage = '구글 로그인에 실패했습니다.';

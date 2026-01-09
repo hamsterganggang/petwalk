@@ -88,7 +88,12 @@ class _SignInPageState extends State<SignInPage> {
     });
 
     try {
-      await _googleSignInHandler.signInWithGoogle();
+      final isNew = await _googleSignInHandler.signInWithGoogle();
+      
+      // 구글 로그인 성공 후 신규 사용자인 경우 닉네임 설정 다이얼로그 표시
+      if (mounted && isNew) {
+        await _showNicknameDialog();
+      }
       // 로그인 성공 시 authStateChanges 리스너에서 자동으로 홈 화면으로 이동
       // 로딩 상태는 Stream 리스너에서 자동으로 해제됨
     } catch (e) {
@@ -99,6 +104,88 @@ class _SignInPageState extends State<SignInPage> {
         });
       }
     }
+  }
+
+  /// 닉네임 설정 다이얼로그 표시
+  Future<void> _showNicknameDialog() async {
+    final nicknameController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('닉네임 설정'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '사용할 닉네임을 입력해주세요.',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: nicknameController,
+                autofocus: true,
+                maxLength: 20,
+                decoration: const InputDecoration(
+                  labelText: '닉네임 *',
+                  hintText: '닉네임을 입력하세요',
+                  counterText: '',
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return '닉네임을 입력해주세요.';
+                  }
+                  if (value.trim().length < 2) {
+                    return '닉네임은 2자 이상이어야 합니다.';
+                  }
+                  if (value.trim().length > 20) {
+                    return '닉네임은 20자 이하여야 합니다.';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              if (formKey.currentState!.validate()) {
+                try {
+                  await _authService.updateUserNickname(
+                    nicknameController.text.trim(),
+                  );
+                  if (mounted) {
+                    Navigator.of(context).pop(); // 다이얼로그 닫기
+                    // 홈 화면으로 이동
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const HomePage()),
+                      (route) => false,
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(e.toString().replaceAll('Exception: ', '')),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              }
+            },
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+    
+    nicknameController.dispose();
   }
 
   /// 비밀번호 재설정
@@ -212,7 +299,7 @@ class _SignInPageState extends State<SignInPage> {
                     keyboardType: TextInputType.emailAddress,
                     enabled: !_isLoading,
                     decoration: const InputDecoration(
-                      labelText: '이메일',
+                      labelText: '이메일 *',
                       hintText: 'example@email.com',
                       prefixIcon: Icon(Icons.email),
                     ),
@@ -234,7 +321,7 @@ class _SignInPageState extends State<SignInPage> {
                     obscureText: _obscurePassword,
                     enabled: !_isLoading,
                     decoration: InputDecoration(
-                      labelText: '비밀번호',
+                      labelText: '비밀번호 *',
                       hintText: '비밀번호를 입력하세요',
                       prefixIcon: const Icon(Icons.lock),
                       suffixIcon: IconButton(
@@ -316,12 +403,12 @@ class _SignInPageState extends State<SignInPage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // 구글 로그인 버튼
+                  // 구글 시작하기 버튼
                   ElevatedButton.icon(
                     onPressed: _isLoading ? null : _handleGoogleSignIn,
                     icon: const Icon(Icons.login, size: 20),
                     label: const Text(
-                      '구글로 로그인',
+                      '구글로 시작하기',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
@@ -339,6 +426,17 @@ class _SignInPageState extends State<SignInPage> {
                         borderRadius: BorderRadius.circular(8),
                         side: BorderSide(color: Colors.grey[300]!),
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 필수 입력 안내
+                  const Text(
+                    '*는 필수입력 사항입니다',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
                     ),
                   ),
                   const SizedBox(height: 24),
