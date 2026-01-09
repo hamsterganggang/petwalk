@@ -1,8 +1,11 @@
+import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../services/google_signin_handler.dart';
 import '../services/authentication_handler.dart';
 import '../utils/theme_config.dart';
 import 'signup_page.dart';
+import 'home_page.dart';
 
 /// 로그인 화면
 class SignInPage extends StatefulWidget {
@@ -22,9 +25,28 @@ class _SignInPageState extends State<SignInPage> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _errorMessage;
+  StreamSubscription<User?>? _authStateSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // 인증 상태 변경 리스너 등록
+    _authStateSubscription = _authService.authStateChanges.listen(
+      (User? user) {
+        if (user != null && mounted) {
+          // 로그인 성공 시 홈 화면으로 이동
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HomePage()),
+            (route) => false,
+          );
+        }
+      },
+    );
+  }
 
   @override
   void dispose() {
+    _authStateSubscription?.cancel();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -46,12 +68,15 @@ class _SignInPageState extends State<SignInPage> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
-      // 로그인 성공 시 자동으로 홈 화면으로 이동
+      // 로그인 성공 시 authStateChanges 리스너에서 자동으로 홈 화면으로 이동
+      // 로딩 상태는 Stream 리스너에서 자동으로 해제됨
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -64,12 +89,15 @@ class _SignInPageState extends State<SignInPage> {
 
     try {
       await _googleSignInHandler.signInWithGoogle();
-      // 로그인 성공 시 자동으로 홈 화면으로 이동
+      // 로그인 성공 시 authStateChanges 리스너에서 자동으로 홈 화면으로 이동
+      // 로딩 상태는 Stream 리스너에서 자동으로 해제됨
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _isLoading = false;
+        });
+      }
     }
   }
 
