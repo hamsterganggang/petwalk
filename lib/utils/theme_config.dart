@@ -1,12 +1,25 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
+  // Primary 색상 - 녹색 계열
   static const Color primaryGreen = Color(0xFF4CAF50);
   static const Color lightGreen = Color(0xFFC8E6C9);
+  
+  // Accent 색상 - 연한 녹색 계열
+  static const Color accentLightGreen = Color(0xFF81C784);
+  
+  // Background 색상
   static const Color backgroundWhite = Color(0xFFFFFFFF);
+  
+  // Text 색상
   static const Color textDark = Color(0xFF212121);
   static const Color textGrey = Color(0xFF757575);
   static const Color textSecondary = Color(0xFF757575);
+  
+  // 추가 유틸리티 색상
+  static const Color divider = Color(0xFFBDBDBD);
+  static const Color error = Color(0xFFD32F2F);
+  static const Color success = Color(0xFF388E3C);
 }
 
 class AppTheme {
