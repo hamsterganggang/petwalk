@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 기본 규칙: 모든 읽기/쓰기는 인증된 사용자만 허용
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // 사용자 프로필 컬렉션
+    match /users/{userId} {
+      // 자신의 프로필만 읽기/쓰기 가능
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // 반려동물 정보 컬렉션
+    match /pets/{petId} {
+      // 자신의 반려동물만 읽기/쓰기 가능
+      allow read, write: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+      
+      // 생성 시 userId 자동 설정
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+    }
+    
+    // 산책 기록 컬렉션
+    match /walks/{walkId} {
+      // 자신의 산책 기록만 읽기/쓰기 가능
+      allow read, write: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+      
+      // 생성 시 userId 자동 설정
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+    }
+    
+    // 공개 읽기만 허용하는 컬렉션 예시 (필요 시 수정)
+    // match /public/{document=**} {
+    //   allow read: if true;
+    //   allow write: if request.auth != null;
+    // }
+  }
+}
