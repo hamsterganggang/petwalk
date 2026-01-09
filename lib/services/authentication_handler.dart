@@ -124,7 +124,10 @@ class UserAuthenticationService {
           'uid': user.uid,
           'email': user.email,
           'displayName': user.displayName,
+          'nickname': user.displayName ?? '', // 검색을 위한 nickname 필드 추가
           'photoURL': user.photoURL,
+          'followerCount': 0,
+          'followingCount': 0,
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         });
@@ -133,6 +136,7 @@ class UserAuthenticationService {
         await userDoc.update({
           'email': user.email,
           'displayName': user.displayName,
+          'nickname': user.displayName ?? '', // nickname 필드도 업데이트
           'photoURL': user.photoURL,
           'updatedAt': FieldValue.serverTimestamp(),
         });
@@ -146,12 +150,50 @@ class UserAuthenticationService {
     }
   }
 
+  /// 닉네임 중복 체크
+  /// 반환값: true면 사용 가능, false면 중복됨
+  Future<bool> checkNicknameAvailability(String nickname) async {
+    try {
+      final user = currentUser;
+      if (user == null) {
+        throw Exception('로그인이 필요합니다.');
+      }
+
+      // 정확히 일치하는 닉네임 검색 (대소문자 구분)
+      final querySnapshot = await _firestore
+          .collection('users')
+          .where('nickname', isEqualTo: nickname.trim())
+          .limit(1)
+          .get();
+
+      // 현재 사용자의 닉네임이면 사용 가능
+      if (querySnapshot.docs.isNotEmpty) {
+        final doc = querySnapshot.docs.first;
+        if (doc.id == user.uid) {
+          return true; // 자신의 닉네임이면 사용 가능
+        }
+        return false; // 다른 사용자가 사용 중
+      }
+
+      return true; // 사용 가능
+    } catch (e) {
+      print('Error checking nickname availability: $e');
+      throw Exception('닉네임 확인 중 오류가 발생했습니다.');
+    }
+  }
+
   /// 사용자 닉네임 업데이트
   Future<void> updateUserNickname(String nickname) async {
     try {
       final user = currentUser;
       if (user == null) {
         throw Exception('로그인이 필요합니다.');
+      }
+
+      // 닉네임 중복 체크
+      final isAvailable = await checkNicknameAvailability(nickname);
+      if (!isAvailable) {
+        throw Exception('이미 사용 중인 닉네임입니다.');
       }
 
       // Firebase Auth에 닉네임 설정
@@ -162,6 +204,7 @@ class UserAuthenticationService {
       final userDoc = _firestore.collection('users').doc(user.uid);
       await userDoc.update({
         'displayName': nickname,
+        'nickname': nickname, // 검색을 위한 nickname 필드도 업데이트
         'updatedAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
