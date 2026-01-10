@@ -113,27 +113,6 @@ class _PublicFeedViewState extends State<PublicFeedView> {
           _errorMessage = e.toString();
           _isLoading = false;
         });
-        
-        // Firestore 인덱스 오류인 경우 특별한 메시지 표시
-        final errorString = e.toString();
-        if (errorString.contains('index') || errorString.contains('FAILED_PRECONDITION')) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                'Firestore 인덱스가 필요합니다. 오류 메시지의 링크를 클릭하여 인덱스를 생성해주세요.',
-              ),
-              backgroundColor: AppColors.error,
-              duration: const Duration(seconds: 10),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('피드를 불러오는 중 오류가 발생했습니다: $e'),
-              backgroundColor: AppColors.error,
-            ),
-          );
-        }
       }
     }
   }
@@ -196,12 +175,6 @@ class _PublicFeedViewState extends State<PublicFeedView> {
         setState(() {
           _isLoadingMore = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('추가 피드를 불러오는 중 오류가 발생했습니다: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
       }
     }
   }
