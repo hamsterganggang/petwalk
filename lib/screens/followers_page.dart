@@ -91,6 +91,84 @@ class _FollowersPageState extends State<FollowersPage> {
     }
   }
 
+  /// 사용자 차단 처리 (차단 시 자동 언팔로우)
+  Future<void> _blockUser(UserProfile user) async {
+    final profileManager = Provider.of<ProfileStateManager>(context, listen: false);
+    
+    if (_isLoading) return;
+
+    // 차단 확인 다이얼로그
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('사용자 차단'),
+        content: Text('${user.nickname}님을 차단하시겠습니까?\n차단하면 자동으로 언팔로우됩니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.error,
+            ),
+            child: const Text('차단'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // 차단 전에 팔로우 중인지 확인
+      final isFollowing = await profileManager.isFollowing(user.uid);
+      
+      // 사용자 차단
+      await _blockService.blockUser(user.uid);
+      
+      // 팔로우 중이었다면 자동 언팔로우
+      if (isFollowing) {
+        await profileManager.unfollowUser(user.uid);
+      }
+      
+      // 차단 목록 새로고침
+      await _blockService.refresh();
+      
+      // 팔로워 목록 새로고침
+      await _loadFollowers();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${user.nickname}님을 차단했습니다.'),
+            backgroundColor: AppColors.primaryGreen,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('차단 중 오류가 발생했습니다: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -208,22 +286,48 @@ class _FollowersPageState extends State<FollowersPage> {
                   overflow: TextOverflow.ellipsis,
                 )
                     : null,
-                trailing: ElevatedButton(
-                  onPressed: _isLoading ? null : () => _toggleFollow(user),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isFollowing ? Colors.transparent : AppColors.primaryGreen,
-                    foregroundColor: Colors.white,
-                    side: isFollowing ? BorderSide(color: AppColors.textGrey, width: 1) : null,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                      : Text(isFollowing ? '팔로잉' : '팔로우', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ElevatedButton(
+                      onPressed: _isLoading ? null : () => _toggleFollow(user),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isFollowing ? Colors.transparent : AppColors.primaryGreen,
+                        foregroundColor: Colors.white,
+                        side: isFollowing ? BorderSide(color: AppColors.textGrey, width: 1) : null,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                          : Text(isFollowing ? '팔로잉' : '팔로우', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(width: 8),
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, color: AppColors.textGrey),
+                      onSelected: (value) {
+                        if (value == 'block') {
+                          _blockUser(user);
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'block',
+                          child: Row(
+                            children: [
+                              Icon(Icons.block, color: AppColors.error, size: 20),
+                              SizedBox(width: 8),
+                              Text('차단하기'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             );
