@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "125120646156-n47o7c23so7a99sov2m8p89c7e709b9u.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.petwalk",
+            "certificate_hash": "ae7157857800064194867c230dfbe4dd2f8a4b4d"
+          }
+        },
+        {
           "client_id": "125120646156-sjva9r9elhe2tjikff2sbstmm1bia8vg.apps.googleusercontent.com",
           "client_type": 3
         }

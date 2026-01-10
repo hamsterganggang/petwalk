@@ -67,6 +67,7 @@ class UserAuthenticationService {
       }
 
       // Firestore에 사용자 정보 저장
+      // 닉네임은 아직 설정되지 않았으므로 빈 문자열로 저장
       if (userCredential.user != null) {
         await _saveUserToFirestore(userCredential.user!);
       }
@@ -225,6 +226,33 @@ class UserAuthenticationService {
       return !docSnapshot.exists;
     } catch (e) {
       print('Error checking if new user: $e');
+      return false;
+    }
+  }
+
+  /// 사용자의 닉네임이 설정되어 있는지 확인
+  /// 반환값: true면 닉네임이 설정됨, false면 닉네임이 없거나 비어있음
+  Future<bool> hasNickname() async {
+    try {
+      final user = currentUser;
+      if (user == null) {
+        return false;
+      }
+
+      final userDoc = _firestore.collection('users').doc(user.uid);
+      final docSnapshot = await userDoc.get();
+      
+      if (!docSnapshot.exists) {
+        return false; // 문서가 없으면 닉네임도 없음
+      }
+
+      final data = docSnapshot.data();
+      final nickname = data?['nickname'] as String?;
+      
+      // 닉네임이 없거나 비어있으면 false
+      return nickname != null && nickname.trim().isNotEmpty;
+    } catch (e) {
+      print('Error checking if user has nickname: $e');
       return false;
     }
   }
