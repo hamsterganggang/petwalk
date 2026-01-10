@@ -17,6 +17,12 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+    
+    // 모든 서브프로젝트에 Java 11 설정 적용
+    tasks.withType<JavaCompile>().configureEach {
+        sourceCompatibility = "11"
+        targetCompatibility = "11"
+    }
 }
 
 tasks.register<Delete>("clean") {
