@@ -20,11 +20,11 @@ class AnimalService {
     bool autoSetPrimary = true,
   }) async {
     try {
-      // 첫 번째 반려동물인지 확인
-      bool isFirstAnimal = false;
-      if (autoSetPrimary) {
+      // 사용자가 명시적으로 대표 동물로 설정하지 않은 경우에만 자동 설정
+      if (!animal.isPrimary && autoSetPrimary) {
+        // 첫 번째 반려동물인지 확인
         final existingAnimals = await fetchAnimalList(animal.ownerId);
-        isFirstAnimal = existingAnimals.isEmpty;
+        final isFirstAnimal = existingAnimals.isEmpty;
         
         // 첫 번째 반려동물이면 자동으로 대표로 설정
         if (isFirstAnimal) {
@@ -109,8 +109,26 @@ class AnimalService {
       });
 
       // 대표 반려동물로 설정된 경우, 다른 반려동물들의 isPrimary를 false로 변경
+      // 대표 동물을 해제하는 경우(isPrimary가 false로 변경)도 처리
       if (animal.isPrimary) {
         await _updateOtherAnimalsPrimaryStatus(animal.id, animal.ownerId);
+      } else {
+        // 대표 동물을 해제하는 경우, 기존에 대표 동물이었다면 다른 동물 중 하나를 대표로 설정
+        // (하지만 사용자가 명시적으로 해제했으므로 그대로 둠)
+        // 혹시 다른 동물이 대표 동물이 아니게 되었을 수 있으므로 확인
+        final allAnimals = await fetchAnimalList(animal.ownerId);
+        final hasPrimary = allAnimals.any((a) => a.id != animal.id && a.isPrimary);
+        
+        // 대표 동물이 없고 다른 동물이 있다면, 첫 번째 동물을 대표로 설정
+        if (!hasPrimary && allAnimals.length > 1) {
+          final firstOtherAnimal = allAnimals.firstWhere(
+            (a) => a.id != animal.id,
+            orElse: () => allAnimals.first,
+          );
+          if (firstOtherAnimal.id != animal.id) {
+            await setPrimaryAnimal(firstOtherAnimal.id, animal.ownerId);
+          }
+        }
       }
     } catch (e) {
       print('반려동물 정보 수정 오류: $e');
