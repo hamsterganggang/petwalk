@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/profile_state_manager.dart';
 import '../providers/user_auth_state.dart';
 import '../screens/edit_profile_page.dart';
+import '../screens/social/blocked_users_list.dart';
 import '../services/google_signin_handler.dart';
 import '../utils/theme_config.dart';
 
@@ -322,6 +323,21 @@ class _ProfileViewState extends State<ProfileView> {
                             profile.locationEnabled,
                           ),
                         ),
+                      ),
+                      const Divider(height: 1),
+                      // 차단된 사용자
+                      ListTile(
+                        leading: const Icon(Icons.block),
+                        title: const Text('차단된 사용자'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const BlockedUsersList(),
+                            ),
+                          );
+                        },
                       ),
                       const Divider(height: 1),
                       // 로그아웃

@@ -39,6 +39,9 @@ dependencies:
   # UI and Charts
   fl_chart: ^0.70.0
   intl: ^0.20.2
+  
+  # Share functionality
+  share_plus: ^10.1.2
 
 dev_dependencies:
   flutter_test:

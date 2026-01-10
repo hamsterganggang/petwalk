@@ -27,13 +27,41 @@ service cloud.firestore {
     
     // 산책 기록 컬렉션
     match /walks/{walkId} {
-      // 자신의 산책 기록만 읽기/쓰기 가능
-      allow read, write: if request.auth != null && 
+      // 읽기: 공개된 산책 기록은 모든 인증된 사용자가 읽을 수 있음, 자신의 기록은 항상 읽기 가능
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || 
+         resource.data.isPublic == true);
+      
+      // 쓰기: 자신의 산책 기록만 수정 가능
+      allow write: if request.auth != null && 
         resource.data.userId == request.auth.uid;
       
       // 생성 시 userId 자동 설정
       allow create: if request.auth != null && 
         request.resource.data.userId == request.auth.uid;
+    }
+    
+    // 좋아요 컬렉션
+    match /likes/{likeId} {
+      // 읽기: 인증된 사용자는 모든 좋아요를 읽을 수 있음
+      allow read: if request.auth != null;
+      // 쓰기: 자신의 좋아요만 생성/삭제 가능
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+    }
+    
+    // 차단 컬렉션
+    match /blocks/{blockId} {
+      // 읽기: 자신이 차단한 사용자 목록만 읽기 가능
+      allow read: if request.auth != null && 
+        resource.data.blockerId == request.auth.uid;
+      // 쓰기: 자신의 차단만 생성/삭제 가능
+      allow create: if request.auth != null && 
+        request.resource.data.blockerId == request.auth.uid;
+      allow delete: if request.auth != null && 
+        resource.data.blockerId == request.auth.uid;
     }
     
     // 공개 읽기만 허용하는 컬렉션 예시 (필요 시 수정)
