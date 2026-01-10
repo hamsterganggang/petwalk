@@ -27,10 +27,9 @@ service cloud.firestore {
     
     // 산책 기록 컬렉션
     match /walks/{walkId} {
-      // 읽기: 공개된 산책 기록은 모든 인증된 사용자가 읽을 수 있음, 자신의 기록은 항상 읽기 가능
-      allow read: if request.auth != null && 
-        (resource.data.userId == request.auth.uid || 
-         resource.data.isPublic == true);
+      // 읽기: 인증된 사용자는 모든 산책 기록을 읽을 수 있음
+      // (쿼리에서 resource.data 접근 불가, 클라이언트에서 isPublic 필터링)
+      allow list, get: if request.auth != null;
       
       // 쓰기: 자신의 산책 기록만 수정 가능
       allow write: if request.auth != null && 

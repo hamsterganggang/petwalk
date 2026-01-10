@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'utils/theme_config.dart';
 import 'services/firebase_service.dart';
 import 'screens/splash_page.dart';
@@ -13,6 +14,9 @@ void main() async {
   
   // Firebase 초기화 (에러 발생 시에도 앱 실행)
   await FirebaseService.initializeFirebaseServices();
+  
+  // intl 패키지 로케일 데이터 초기화 (한국어 지원)
+  await initializeDateFormatting('ko_KR', null);
   
   runApp(const MyApp());
 }

@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../providers/profile_state_manager.dart';
 import '../providers/user_auth_state.dart';
-import '../screens/edit_profile_page.dart';
-import '../screens/social/blocked_users_list.dart';
-import '../services/google_signin_handler.dart';
+import '../models/user_profile.dart';
 import '../utils/theme_config.dart';
+import '../services/google_signin_handler.dart';
+import '../screens/edit_profile_page.dart';
+import '../screens/blocked_users_list.dart';
+import '../screens/followers_page.dart';
+import '../screens/following_page.dart';
 
-/// 프로필 조회 화면
 class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
 
@@ -20,20 +23,17 @@ class _ProfileViewState extends State<ProfileView> {
   @override
   void initState() {
     super.initState();
-    // 프로필 데이터 로드
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final profileManager = Provider.of<ProfileStateManager>(context, listen: false);
       profileManager.loadProfileData();
     });
   }
 
-  /// 위치 권한 요청
   Future<void> _requestLocationPermission(ProfileStateManager profileManager) async {
     try {
       final status = await Permission.location.request();
 
       if (status.isGranted) {
-        // 권한 허용 시 프로필 업데이트
         await profileManager.updateLocationEnabled(true);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -64,13 +64,6 @@ class _ProfileViewState extends State<ProfileView> {
     }
   }
 
-  /// 위치 권한 상태 확인
-  Future<bool> _checkLocationPermission() async {
-    final status = await Permission.location.status;
-    return status.isGranted;
-  }
-
-  /// 권한 거부 다이얼로그 표시
   void _showPermissionDeniedDialog() {
     showDialog(
       context: context,
@@ -96,7 +89,6 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
-  /// 권한 영구 거부 다이얼로그 표시
   void _showPermissionPermanentlyDeniedDialog() {
     showDialog(
       context: context,
@@ -122,7 +114,6 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
-  /// 위치 권한 토글
   Future<void> _toggleLocationPermission(
       ProfileStateManager profileManager,
       bool currentStatus,
@@ -133,10 +124,8 @@ class _ProfileViewState extends State<ProfileView> {
 
     try {
       if (!currentStatus) {
-        // 위치 권한 요청
         await _requestLocationPermission(profileManager);
       } else {
-        // 위치 권한 비활성화
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (BuildContext context) {
@@ -188,6 +177,52 @@ class _ProfileViewState extends State<ProfileView> {
     }
   }
 
+  void _showFollowersList(BuildContext context, ProfileStateManager profileManager) {
+    if (profileManager.profile == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FollowersPage(
+          userId: profileManager.profile!.uid,
+        ),
+      ),
+    );
+  }
+
+  void _showFollowingList(BuildContext context, ProfileStateManager profileManager) {
+    if (profileManager.profile == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FollowingPage(
+          userId: profileManager.profile!.uid,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFollowerInfo(String label, int count) {
+    return Column(
+      children: [
+        Text(
+          count.toString(),
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 14,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<ProfileStateManager, UserAuthState>(
@@ -222,7 +257,9 @@ class _ProfileViewState extends State<ProfileView> {
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: profileManager.isLoading ? null : () async {
+                  onPressed: profileManager.isLoading
+                      ? null
+                      : () async {
                     profileManager.clearError();
                     await profileManager.loadProfileData();
                   },
@@ -234,7 +271,9 @@ class _ProfileViewState extends State<ProfileView> {
         }
 
         return RefreshIndicator(
-          onRefresh: () => profileManager.refresh(),
+          onRefresh: () async {
+            await profileManager.refresh();
+          },
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(24.0),
@@ -242,14 +281,13 @@ class _ProfileViewState extends State<ProfileView> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 const SizedBox(height: 24),
-                // 프로필 사진
                 CircleAvatar(
                   radius: 60,
                   backgroundColor: AppColors.divider,
-                  backgroundImage: profile!.photoUrl != null
+                  backgroundImage: (profile?.photoUrl != null && profile!.photoUrl!.isNotEmpty)
                       ? NetworkImage(profile.photoUrl!)
                       : null,
-                  child: profile.photoUrl == null
+                  child: (profile?.photoUrl == null || profile!.photoUrl!.isEmpty)
                       ? const Icon(
                     Icons.person,
                     size: 60,
@@ -258,15 +296,36 @@ class _ProfileViewState extends State<ProfileView> {
                       : null,
                 ),
                 const SizedBox(height: 24),
-                // 닉네임
                 Text(
-                  profile.nickname,
+                  profile?.nickname ?? '',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  (profile?.bio != null && profile!.bio.isNotEmpty) ? profile.bio : '한 줄 소개가 없습니다.',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    GestureDetector(
+                      onTap: () => _showFollowersList(context, profileManager),
+                      child: _buildFollowerInfo('팔로워', profile?.followers ?? 0),
+                    ),
+                    const SizedBox(width: 40),
+                    GestureDetector(
+                      onTap: () => _showFollowingList(context, profileManager),
+                      child: _buildFollowerInfo('팔로잉', profile?.following ?? 0),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 32),
-                // 프로필 수정 버튼
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -274,6 +333,7 @@ class _ProfileViewState extends State<ProfileView> {
                         ? null
                         : () async {
                       try {
+                        if (profile == null) return;
                         final result = await Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -303,29 +363,26 @@ class _ProfileViewState extends State<ProfileView> {
                   ),
                 ),
                 const SizedBox(height: 32),
-                // 설정 메뉴
                 Card(
                   child: Column(
                     children: [
-                      // 위치 권한 설정
                       ListTile(
                         leading: const Icon(Icons.location_on),
                         title: const Text('위치 권한'),
                         subtitle: Text(
-                          profile.locationEnabled ? '활성화됨' : '비활성화됨',
+                          (profile?.locationEnabled ?? false) ? '활성화됨' : '비활성화됨',
                         ),
                         trailing: Switch(
-                          value: profile.locationEnabled,
+                          value: profile?.locationEnabled ?? false,
                           onChanged: profileManager.isUpdating || profileManager.isLoading
                               ? null
                               : (value) => _toggleLocationPermission(
                             profileManager,
-                            profile.locationEnabled,
+                            profile?.locationEnabled ?? false,
                           ),
                         ),
                       ),
                       const Divider(height: 1),
-                      // 차단된 사용자
                       ListTile(
                         leading: const Icon(Icons.block),
                         title: const Text('차단된 사용자'),
@@ -340,7 +397,6 @@ class _ProfileViewState extends State<ProfileView> {
                         },
                       ),
                       const Divider(height: 1),
-                      // 로그아웃
                       ListTile(
                         leading: const Icon(Icons.logout, color: AppColors.error),
                         title: const Text(

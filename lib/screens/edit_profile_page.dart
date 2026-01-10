@@ -23,6 +23,7 @@ class EditProfilePage extends StatefulWidget {
 class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nicknameController;
+  late TextEditingController _bioController;
   File? _selectedImage;
   String? _imageUrl;
   bool _isLoading = false;
@@ -31,12 +32,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
   void initState() {
     super.initState();
     _nicknameController = TextEditingController(text: widget.profile.nickname);
+    _bioController = TextEditingController(text: widget.profile.bio);
     _imageUrl = widget.profile.photoUrl;
   }
 
   @override
   void dispose() {
     _nicknameController.dispose();
+    _bioController.dispose();
     super.dispose();
   }
 
@@ -141,15 +144,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
     try {
       final newNickname = _nicknameController.text.trim();
+      final newBio = _bioController.text.trim();
 
-      // 닉네임이 변경되었는지 확인
+      // 변경사항 확인
       bool nicknameChanged = newNickname != widget.profile.nickname;
-      
-      // 이미지가 선택되었는지 확인
+      bool bioChanged = newBio != widget.profile.bio;
       bool hasNewImage = _selectedImage != null;
+      bool imageDeleted = _imageUrl == null && widget.profile.photoUrl != null && !hasNewImage;
 
       // 변경사항이 없으면 종료
-      if (!nicknameChanged && !hasNewImage && _imageUrl != null) {
+      if (!nicknameChanged && !bioChanged && !hasNewImage && !imageDeleted) {
         if (mounted) {
           Navigator.pop(context, false);
         }
@@ -175,13 +179,13 @@ class _EditProfilePageState extends State<EditProfilePage> {
         }
       }
 
-      // 닉네임 업데이트
-      if (nicknameChanged) {
-        success = await widget.profileManager.updateNickname(newNickname);
+      // 이미지 삭제
+      if (imageDeleted) {
+        success = await widget.profileManager.updateProfilePhotoUrl(null);
         if (!success && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(widget.profileManager.errorMessage ?? '닉네임 업데이트에 실패했습니다.'),
+              content: Text(widget.profileManager.errorMessage ?? '프로필 사진 삭제에 실패했습니다.'),
               backgroundColor: AppColors.error,
             ),
           );
@@ -192,13 +196,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
         }
       }
 
-      // 이미지가 삭제된 경우 (사진 삭제 선택 시)
-      if (_imageUrl == null && widget.profile.photoUrl != null && !hasNewImage) {
-        success = await widget.profileManager.updateProfilePhotoUrl(null);
+      // 닉네임 또는 bio 업데이트
+      if (nicknameChanged || bioChanged) {
+        success = await widget.profileManager.updateProfile(
+          nickname: nicknameChanged ? newNickname : null,
+          bio: bioChanged ? newBio : null,
+        );
         if (!success && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(widget.profileManager.errorMessage ?? '프로필 사진 삭제에 실패했습니다.'),
+              content: Text(widget.profileManager.errorMessage ?? '프로필 업데이트에 실패했습니다.'),
               backgroundColor: AppColors.error,
             ),
           );
@@ -333,7 +340,46 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 maxLength: 20,
                 enabled: !_isLoading && !widget.profileManager.isUpdating,
               ),
+              const SizedBox(height: 16),
+              // 한 줄 소개 입력
+              TextFormField(
+                controller: _bioController,
+                decoration: const InputDecoration(
+                  labelText: '한 줄 소개',
+                  hintText: '자신을 소개해주세요',
+                  prefixIcon: Icon(Icons.edit_note),
+                ),
+                maxLength: 50,
+                maxLines: 2,
+                enabled: !_isLoading && !widget.profileManager.isUpdating,
+              ),
               const SizedBox(height: 32),
+              // 저장 버튼
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: (_isLoading || widget.profileManager.isUpdating) 
+                      ? null 
+                      : _handleSave,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text(
+                          '프로필 저장',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                ),
+              ),
             ],
           ),
         ),

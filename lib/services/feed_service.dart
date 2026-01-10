@@ -103,10 +103,22 @@ class FeedService {
             .orderBy('createdAt', descending: true);
       }
 
+      // 팔로우한 사람들의 ID 목록 가져오기
+      List<String> followingIds = [];
+      if (userId != null) {
+        final followsSnapshot = await _firestore
+            .collection('follows')
+            .where('followerId', isEqualTo: userId)
+            .get();
+        followingIds = followsSnapshot.docs
+            .map((doc) => doc.data()['followingId'] as String)
+            .toList();
+      }
+
       // 페이지네이션을 위해 충분한 수의 문서를 가져옴
       final fetchLimit = _pageSize * 3; // 중복 제거를 위해 더 많이 가져옴
       
-      // 두 쿼리를 병렬로 실행
+      // 공개 기록과 내 기록 쿼리 실행
       QuerySnapshot publicSnapshot;
       QuerySnapshot? userSnapshot;
       
@@ -131,6 +143,22 @@ class FeedService {
         userSnapshot = null;
       }
 
+      // 팔로우한 사람들의 산책 기록 가져오기
+      // whereIn은 최대 10개까지만 지원하므로 배치로 처리
+      List<QuerySnapshot> followingSnapshots = [];
+      if (followingIds.isNotEmpty) {
+        for (var i = 0; i < followingIds.length; i += 10) {
+          final batch = followingIds.skip(i).take(10).toList();
+          final snapshot = await _firestore
+              .collection('walks')
+              .where('userId', whereIn: batch)
+              .orderBy('createdAt', descending: true)
+              .limit(fetchLimit)
+              .get();
+          followingSnapshots.add(snapshot);
+        }
+      }
+
       // 모든 문서를 합치고 중복 제거 (walkId 기준)
       final allDocs = <String, QueryDocumentSnapshot>{};
       
@@ -144,15 +172,34 @@ class FeedService {
         }
       }
 
-      // createdAt 기준으로 정렬
+      // 팔로우한 사람들의 산책 기록 추가
+      for (var snapshot in followingSnapshots) {
+        for (var doc in snapshot.docs) {
+          allDocs[doc.id] = doc; // 중복이면 덮어쓰기
+        }
+      }
+
+      // createdAt 또는 startTime 기준으로 정렬
       final sortedDocs = allDocs.values.toList()
         ..sort((a, b) {
-          final aCreatedAt = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-          final bCreatedAt = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-          if (aCreatedAt == null && bCreatedAt == null) return 0;
-          if (aCreatedAt == null) return 1;
-          if (bCreatedAt == null) return -1;
-          return bCreatedAt.compareTo(aCreatedAt); // 내림차순
+          final aData = a.data() as Map<String, dynamic>;
+          final bData = b.data() as Map<String, dynamic>;
+          
+          // createdAt이 있으면 createdAt 기준, 없으면 startTime 기준
+          Timestamp? aTime = aData['createdAt'] as Timestamp?;
+          Timestamp? bTime = bData['createdAt'] as Timestamp?;
+          
+          if (aTime == null) {
+            aTime = aData['startTime'] as Timestamp?;
+          }
+          if (bTime == null) {
+            bTime = bData['startTime'] as Timestamp?;
+          }
+          
+          if (aTime == null && bTime == null) return 0;
+          if (aTime == null) return 1;
+          if (bTime == null) return -1;
+          return bTime.compareTo(aTime); // 내림차순
         });
 
       // 페이지네이션 처리
@@ -195,8 +242,9 @@ class FeedService {
 
         final startTime = (data['startTime'] as Timestamp).toDate();
         final endTime = (data['endTime'] as Timestamp).toDate();
+        // createdAt이 없으면 startTime 사용
         final createdAt = (data['createdAt'] as Timestamp?)?.toDate() ?? 
-                         DateTime.now();
+                         startTime;
         
         items.add(FeedItem(
           walkId: doc.id,

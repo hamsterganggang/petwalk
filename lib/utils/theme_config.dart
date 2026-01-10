@@ -20,6 +20,9 @@ class AppColors {
   static const Color divider = Color(0xFFBDBDBD);
   static const Color error = Color(0xFFD32F2F);
   static const Color success = Color(0xFF388E3C);
+  
+  // Primary 색상 getter
+  static Color get primary => primaryGreen;
 }
 
 class AppTheme {

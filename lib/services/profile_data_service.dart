@@ -217,11 +217,13 @@ class ProfileDataService {
   ///
   /// [uid] 사용자 ID
   /// [nickname] 새로운 닉네임 (선택)
+  /// [bio] 새로운 한 줄 소개 (선택)
   /// [photoUrl] 새로운 프로필 사진 URL (선택)
   /// [locationEnabled] 위치 권한 활성화 여부 (선택)
   Future<void> updateProfile({
     required String uid,
     String? nickname,
+    String? bio,
     String? photoUrl,
     bool? locationEnabled,
   }) async {
@@ -262,6 +264,10 @@ class ProfileDataService {
 
       if (photoUrl != null) {
         updateData['photoUrl'] = photoUrl;
+      }
+
+      if (bio != null) {
+        updateData['bio'] = bio;
       }
 
       if (locationEnabled != null) {

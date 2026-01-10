@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/user_profile.dart';
 
 class FollowService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -17,8 +18,8 @@ class FollowService {
     final followDocRef = _firestore.collection('follows').doc('${currentUserId}_$targetUserId');
 
     await _firestore.runTransaction((transaction) async {
-      final currentUserRef = _firestore.collection('users').doc(currentUserId);
-      final targetUserRef = _firestore.collection('users').doc(targetUserId);
+      final currentUserRef = _firestore.collection('profiles').doc(currentUserId);
+      final targetUserRef = _firestore.collection('profiles').doc(targetUserId);
 
       // 트랜잭션 내에서 팔로우 문서 생성
       transaction.set(followDocRef, {
@@ -27,10 +28,10 @@ class FollowService {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // 내(current)가 팔로우하는 사람 수 (followingCount) +1
-      transaction.update(currentUserRef, {'followingCount': FieldValue.increment(1)});
-      // 상대방(target)의 팔로워 수 (followerCount) +1
-      transaction.update(targetUserRef, {'followerCount': FieldValue.increment(1)});
+      // 내(current)가 팔로우하는 사람 수 (following) +1
+      transaction.update(currentUserRef, {'following': FieldValue.increment(1)});
+      // 상대방(target)의 팔로워 수 (followers) +1
+      transaction.update(targetUserRef, {'followers': FieldValue.increment(1)});
     });
   }
 
@@ -39,16 +40,16 @@ class FollowService {
     final followDocRef = _firestore.collection('follows').doc('${currentUserId}_$targetUserId');
 
     await _firestore.runTransaction((transaction) async {
-      final currentUserRef = _firestore.collection('users').doc(currentUserId);
-      final targetUserRef = _firestore.collection('users').doc(targetUserId);
+      final currentUserRef = _firestore.collection('profiles').doc(currentUserId);
+      final targetUserRef = _firestore.collection('profiles').doc(targetUserId);
 
       // 트랜잭션 내에서 팔로우 문서 삭제
       transaction.delete(followDocRef);
 
-      // 내(current)가 팔로우하는 사람 수 (followingCount) -1
-      transaction.update(currentUserRef, {'followingCount': FieldValue.increment(-1)});
-      // 상대방(target)의 팔로워 수 (followerCount) -1
-      transaction.update(targetUserRef, {'followerCount': FieldValue.increment(-1)});
+      // 내(current)가 팔로우하는 사람 수 (following) -1
+      transaction.update(currentUserRef, {'following': FieldValue.increment(-1)});
+      // 상대방(target)의 팔로워 수 (followers) -1
+      transaction.update(targetUserRef, {'followers': FieldValue.increment(-1)});
     });
   }
 
@@ -64,12 +65,69 @@ class FollowService {
       return [];
     }
     final querySnapshot = await _firestore
-        .collection('users')
+        .collection('profiles')
         .where('nickname', isGreaterThanOrEqualTo: nickname)
-    // 'isLessThanOrEqualTo'를 'isLessThan'으로 수정하여 정확한 starts-with 검색 구현
         .where('nickname', isLessThan: '$nickname\uf8ff')
         .limit(20)
         .get();
     return querySnapshot.docs;
+  }
+
+  // 팔로워 목록 가져오기
+  Future<List<UserProfile>> getFollowers(String userId) async {
+    try {
+      final followsSnapshot = await _firestore
+          .collection('follows')
+          .where('followingId', isEqualTo: userId)
+          .get();
+
+      List<UserProfile> followers = [];
+      
+      for (final followDoc in followsSnapshot.docs) {
+        final followerId = followDoc['followerId'] as String;
+        final userDoc = await _firestore.collection('profiles').doc(followerId).get();
+        
+        if (userDoc.exists) {
+          followers.add(UserProfile.fromFirestore(userDoc));
+        }
+      }
+      
+      // 팔로워 수가 많은 순서로 정렬 (선택적)
+      followers.sort((a, b) => b.followers.compareTo(a.followers));
+      
+      return followers;
+    } catch (e) {
+      print('팔로워 목록 가져오기 오류: $e');
+      return [];
+    }
+  }
+
+  // 팔로잉 목록 가져오기
+  Future<List<UserProfile>> getFollowing(String userId) async {
+    try {
+      final followsSnapshot = await _firestore
+          .collection('follows')
+          .where('followerId', isEqualTo: userId)
+          .get();
+
+      List<UserProfile> following = [];
+      
+      for (final followDoc in followsSnapshot.docs) {
+        final followingId = followDoc['followingId'] as String;
+        final userDoc = await _firestore.collection('profiles').doc(followingId).get();
+        
+        if (userDoc.exists) {
+          following.add(UserProfile.fromFirestore(userDoc));
+        }
+      }
+      
+      // 팔로잉 수가 많은 순서로 정렬 (선택적)
+      following.sort((a, b) => b.following.compareTo(a.following));
+      
+      return following;
+    } catch (e) {
+      print('팔로잉 목록 가져오기 오류: $e');
+      return [];
+    }
   }
 }
