@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import '../models/animal_data_model.dart';
 
 class WalkSessionProvider with ChangeNotifier {
   bool _isTracking = false;
@@ -19,11 +20,15 @@ class WalkSessionProvider with ChangeNotifier {
   double _totalDistance = 0.0; // In kilometers
   double get totalDistance => _totalDistance;
 
+  List<AnimalDataModel> _selectedPets = [];
+  List<AnimalDataModel> get selectedPets => _selectedPets;
+
   Timer? _timer;
   StreamSubscription<Position>? _positionSubscription;
 
-  void startTracking() {
+  void startTracking(List<AnimalDataModel> pets) {
     _isTracking = true;
+    _selectedPets = pets;
     _routeCoordinates = [];
     _elapsedTime = Duration.zero;
     _totalDistance = 0.0;
@@ -81,6 +86,7 @@ class WalkSessionProvider with ChangeNotifier {
     _elapsedTime = Duration.zero;
     _totalDistance = 0.0;
     _startTime = null;
+    _selectedPets = [];
     notifyListeners();
   }
 }

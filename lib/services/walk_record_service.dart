@@ -14,6 +14,7 @@ class WalkRecordService {
     required List<LatLng> routeCoordinates,
     required String memo,
     required String mood,
+    List<String> selectedPetNames = const [],
     List<String> imageUrls = const [],
   }) async {
     final user = _auth.currentUser;
@@ -26,6 +27,7 @@ class WalkRecordService {
       'totalDistance': totalDistance,
       'memo': memo,
       'mood': mood,
+      'petNames': selectedPetNames,
       'imageUrls': imageUrls,
       'route': routeCoordinates.map((point) => {
         'lat': point.latitude,
