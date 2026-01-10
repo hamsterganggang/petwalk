@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_service.dart';
+import 'notification_service.dart';
 
 /// Firebase Authentication 래퍼 클래스
 class UserAuthenticationService {
@@ -17,15 +18,11 @@ class UserAuthenticationService {
   bool get isAuthenticated => currentUser != null;
 
   /// 구글 로그인
-  /// 
-  /// [googleIdToken]과 [googleAccessToken]을 받아서 Firebase Auth에 인증
-  /// 반환값: (UserCredential, isNewUser)
   Future<Map<String, dynamic>> signInWithGoogle({
     required String googleIdToken,
     required String googleAccessToken,
   }) async {
     try {
-      // Google 인증 정보로 Firebase Auth에 로그인
       final credential = GoogleAuthProvider.credential(
         idToken: googleIdToken,
         accessToken: googleAccessToken,
@@ -33,10 +30,10 @@ class UserAuthenticationService {
 
       final userCredential = await _auth.signInWithCredential(credential);
       
-      // 로그인 성공 시 Firestore에 사용자 정보 저장 및 신규 사용자 여부 확인
       bool isNew = false;
       if (userCredential.user != null) {
         isNew = await _saveUserToFirestore(userCredential.user!);
+        await NotificationService.updateToken();
       }
 
       return {
@@ -60,16 +57,14 @@ class UserAuthenticationService {
         password: password,
       );
 
-      // 회원가입 성공 시 사용자 이름 설정 (있는 경우)
       if (displayName != null && displayName.isNotEmpty && userCredential.user != null) {
         await userCredential.user!.updateDisplayName(displayName);
         await userCredential.user!.reload();
       }
 
-      // Firestore에 사용자 정보 저장
-      // 닉네임은 아직 설정되지 않았으므로 빈 문자열로 저장
       if (userCredential.user != null) {
         await _saveUserToFirestore(userCredential.user!);
+        await NotificationService.updateToken();
       }
 
       return userCredential;
@@ -89,9 +84,9 @@ class UserAuthenticationService {
         password: password,
       );
 
-      // 로그인 성공 시 Firestore에 사용자 정보 업데이트
       if (userCredential.user != null) {
         await _saveUserToFirestore(userCredential.user!);
+        await NotificationService.updateToken();
       }
 
       return userCredential;
@@ -109,36 +104,30 @@ class UserAuthenticationService {
     }
   }
 
-  /// Firestore에 사용자 정보 저장
-  /// 반환값: 신규 사용자인지 여부 (true: 신규, false: 기존)
+  /// Firestore에 사용자 정보 저장 (profiles 컬렉션 사용)
   Future<bool> _saveUserToFirestore(User user) async {
     try {
-      final userDoc = _firestore.collection('users').doc(user.uid);
-      
-      // 사용자 문서가 이미 존재하는지 확인
+      final userDoc = _firestore.collection('profiles').doc(user.uid);
       final docSnapshot = await userDoc.get();
       final isNew = !docSnapshot.exists;
       
-      if (!docSnapshot.exists) {
-        // 새 사용자인 경우 문서 생성
+      if (isNew) {
         await userDoc.set({
           'uid': user.uid,
           'email': user.email,
           'displayName': user.displayName,
-          'nickname': user.displayName ?? '', // 검색을 위한 nickname 필드 추가
-          'photoURL': user.photoURL,
-          'followerCount': 0,
-          'followingCount': 0,
+          'nickname': user.displayName ?? '',
+          'photoUrl': user.photoURL,
+          'followers': 0,
+          'following': 0,
+          'notificationsEnabled': true,
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         });
       } else {
-        // 기존 사용자인 경우 정보 업데이트
         await userDoc.update({
           'email': user.email,
           'displayName': user.displayName,
-          'nickname': user.displayName ?? '', // nickname 필드도 업데이트
-          'photoURL': user.photoURL,
           'updatedAt': FieldValue.serverTimestamp(),
         });
       }
@@ -146,40 +135,60 @@ class UserAuthenticationService {
       return isNew;
     } catch (e) {
       print('Error saving user to Firestore: $e');
-      // Firestore 저장 실패해도 로그인은 성공으로 처리
+      return false;
+    }
+  }
+
+  /// 사용자의 닉네임이 설정되어 있는지 확인 (에러 해결용)
+  Future<bool> hasNickname() async {
+    try {
+      final user = currentUser;
+      if (user == null) return false;
+
+      final docSnapshot = await _firestore.collection('profiles').doc(user.uid).get();
+      if (!docSnapshot.exists) return false;
+
+      final data = docSnapshot.data();
+      final nickname = data?['nickname'] as String?;
+      return nickname != null && nickname.trim().isNotEmpty;
+    } catch (e) {
+      print('Error checking hasNickname: $e');
+      return false;
+    }
+  }
+
+  /// 인증 상태 확인 (에러 해결용)
+  Future<bool> checkAuthStatus() async {
+    try {
+      await _auth.authStateChanges().first;
+      return isAuthenticated;
+    } catch (e) {
+      print('Error checking auth status: $e');
       return false;
     }
   }
 
   /// 닉네임 중복 체크
-  /// 반환값: true면 사용 가능, false면 중복됨
   Future<bool> checkNicknameAvailability(String nickname) async {
     try {
       final user = currentUser;
-      if (user == null) {
-        throw Exception('로그인이 필요합니다.');
-      }
+      if (user == null) return false;
 
-      // 정확히 일치하는 닉네임 검색 (대소문자 구분)
       final querySnapshot = await _firestore
-          .collection('users')
+          .collection('profiles')
           .where('nickname', isEqualTo: nickname.trim())
           .limit(1)
           .get();
 
-      // 현재 사용자의 닉네임이면 사용 가능
       if (querySnapshot.docs.isNotEmpty) {
         final doc = querySnapshot.docs.first;
-        if (doc.id == user.uid) {
-          return true; // 자신의 닉네임이면 사용 가능
-        }
-        return false; // 다른 사용자가 사용 중
+        if (doc.id == user.uid) return true;
+        return false;
       }
-
-      return true; // 사용 가능
+      return true;
     } catch (e) {
       print('Error checking nickname availability: $e');
-      throw Exception('닉네임 확인 중 오류가 발생했습니다.');
+      return false;
     }
   }
 
@@ -187,73 +196,20 @@ class UserAuthenticationService {
   Future<void> updateUserNickname(String nickname) async {
     try {
       final user = currentUser;
-      if (user == null) {
-        throw Exception('로그인이 필요합니다.');
-      }
+      if (user == null) throw Exception('로그인이 필요합니다.');
 
-      // 닉네임 중복 체크
       final isAvailable = await checkNicknameAvailability(nickname);
-      if (!isAvailable) {
-        throw Exception('이미 사용 중인 닉네임입니다.');
-      }
+      if (!isAvailable) throw Exception('이미 사용 중인 닉네임입니다.');
 
-      // Firebase Auth에 닉네임 설정
       await user.updateDisplayName(nickname);
       await user.reload();
 
-      // Firestore에 닉네임 저장
-      final userDoc = _firestore.collection('users').doc(user.uid);
-      await userDoc.update({
-        'displayName': nickname,
-        'nickname': nickname, // 검색을 위한 nickname 필드도 업데이트
+      await _firestore.collection('profiles').doc(user.uid).update({
+        'nickname': nickname,
         'updatedAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
       throw _handleAuthError(e);
-    }
-  }
-
-  /// 사용자가 신규 사용자인지 확인 (Firestore에 문서가 없으면 신규)
-  Future<bool> isNewUser() async {
-    try {
-      final user = currentUser;
-      if (user == null) {
-        return false;
-      }
-
-      final userDoc = _firestore.collection('users').doc(user.uid);
-      final docSnapshot = await userDoc.get();
-      return !docSnapshot.exists;
-    } catch (e) {
-      print('Error checking if new user: $e');
-      return false;
-    }
-  }
-
-  /// 사용자의 닉네임이 설정되어 있는지 확인
-  /// 반환값: true면 닉네임이 설정됨, false면 닉네임이 없거나 비어있음
-  Future<bool> hasNickname() async {
-    try {
-      final user = currentUser;
-      if (user == null) {
-        return false;
-      }
-
-      final userDoc = _firestore.collection('users').doc(user.uid);
-      final docSnapshot = await userDoc.get();
-      
-      if (!docSnapshot.exists) {
-        return false; // 문서가 없으면 닉네임도 없음
-      }
-
-      final data = docSnapshot.data();
-      final nickname = data?['nickname'] as String?;
-      
-      // 닉네임이 없거나 비어있으면 false
-      return nickname != null && nickname.trim().isNotEmpty;
-    } catch (e) {
-      print('Error checking if user has nickname: $e');
-      return false;
     }
   }
 
@@ -266,52 +222,10 @@ class UserAuthenticationService {
     }
   }
 
-  /// 인증 상태 확인
-  Future<bool> checkAuthStatus() async {
-    try {
-      await _auth.authStateChanges().first;
-      return isAuthenticated;
-    } catch (e) {
-      print('Error checking auth status: $e');
-      return false;
-    }
-  }
-
-  /// 에러 처리 및 사용자 친화적 메시지 반환
   Exception _handleAuthError(dynamic error) {
-    String message;
     if (error is FirebaseAuthException) {
-      switch (error.code) {
-        case 'user-disabled':
-          message = '이 계정은 비활성화되었습니다.';
-          break;
-        case 'invalid-credential':
-          message = '로그인 정보가 올바르지 않습니다.';
-          break;
-        case 'operation-not-allowed':
-          message = '이 로그인 방법은 허용되지 않습니다.';
-          break;
-        case 'weak-password':
-          message = '비밀번호가 너무 약합니다.';
-          break;
-        case 'email-already-in-use':
-          message = '이 이메일은 이미 사용 중입니다.';
-          break;
-        case 'user-not-found':
-          message = '사용자를 찾을 수 없습니다.';
-          break;
-        case 'wrong-password':
-          message = '비밀번호가 올바르지 않습니다.';
-          break;
-        case 'network-request-failed':
-          message = '네트워크 연결을 확인해주세요.';
-          break;
-        default:
-          message = '로그인 중 오류가 발생했습니다: ${error.message ?? error.code}';
-      }
-    } else {
-      message = '알 수 없는 오류가 발생했습니다: $error';
+      return Exception(error.message ?? '인증 오류가 발생했습니다.');
     }
-    return Exception(message);
+    return Exception(error.toString());
   }
 }

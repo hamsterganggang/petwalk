@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_profile.dart';
 import '../services/profile_data_service.dart';
 import '../services/follow_service.dart';
+import '../services/notification_service.dart';
 
 class ProfileStateManager extends ChangeNotifier {
   final ProfileDataService _profileService = ProfileDataService();
@@ -47,6 +48,7 @@ class ProfileStateManager extends ChangeNotifier {
             photoUrl: user.photoURL,
             bio: '',
             locationEnabled: false,
+            notificationsEnabled: true,
             followers: 0,
             following: 0,
           );
@@ -62,6 +64,32 @@ class ProfileStateManager extends ChangeNotifier {
       _profile = null;
     } finally {
       _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // 알림 설정 업데이트 함수 추가
+  Future<bool> updateNotificationsEnabled(bool enabled) async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+
+    _isUpdating = true;
+    notifyListeners();
+
+    try {
+      // 1. NotificationService를 통해 FCM 토큰 제어 및 Firestore 업데이트
+      await NotificationService.updateNotificationSetting(enabled);
+      
+      // 2. 로컬 상태 업데이트
+      if (_profile != null) {
+        _profile = _profile!.copyWith(notificationsEnabled: enabled);
+      }
+      return true;
+    } catch (e) {
+      _errorMessage = '알림 설정 업데이트 오류: $e';
+      return false;
+    } finally {
+      _isUpdating = false;
       notifyListeners();
     }
   }

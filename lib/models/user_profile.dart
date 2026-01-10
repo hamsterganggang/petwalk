@@ -7,6 +7,7 @@ class UserProfile {
   final String? photoUrl;
   final String bio;
   final bool locationEnabled;
+  final bool notificationsEnabled; // 알림 설정 추가
   final int followers;
   final int following;
 
@@ -17,6 +18,7 @@ class UserProfile {
     this.photoUrl,
     this.bio = '',
     required this.locationEnabled,
+    this.notificationsEnabled = true, // 기본값 true
     this.followers = 0,
     this.following = 0,
   });
@@ -30,6 +32,7 @@ class UserProfile {
       photoUrl: data['photoUrl'],
       bio: data['bio'] ?? '',
       locationEnabled: data['locationEnabled'] ?? false,
+      notificationsEnabled: data['notificationsEnabled'] ?? true,
       followers: (data['followers'] ?? 0) as int,
       following: (data['following'] ?? 0) as int,
     );
@@ -42,6 +45,7 @@ class UserProfile {
       'photoUrl': photoUrl,
       'bio': bio,
       'locationEnabled': locationEnabled,
+      'notificationsEnabled': notificationsEnabled,
       'followers': followers,
       'following': following,
     };
@@ -52,6 +56,7 @@ class UserProfile {
     String? photoUrl,
     String? bio,
     bool? locationEnabled,
+    bool? notificationsEnabled,
     int? followers,
     int? following,
   }) {
@@ -62,6 +67,7 @@ class UserProfile {
       photoUrl: photoUrl ?? this.photoUrl,
       bio: bio ?? this.bio,
       locationEnabled: locationEnabled ?? this.locationEnabled,
+      notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
       followers: followers ?? this.followers,
       following: following ?? this.following,
     );
