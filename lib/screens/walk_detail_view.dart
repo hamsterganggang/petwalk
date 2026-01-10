@@ -23,6 +23,8 @@ class WalkDetailView extends StatelessWidget {
     final memo = walkData['memo'] as String? ?? '';
     final mood = walkData['mood'] as String? ?? '😊';
     final routeData = walkData['route'] as List<dynamic>? ?? [];
+    final petNames = walkData['petNames'] as List<dynamic>? ?? [];
+    final imageUrls = walkData['imageUrls'] as List<dynamic>? ?? [];
 
     final List<LatLng> points = routeData.map((p) {
       return LatLng((p['lat'] as num).toDouble(), (p['lng'] as num).toDouble());
@@ -38,8 +40,9 @@ class WalkDetailView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 지도 영역
             SizedBox(
-              height: 300,
+              height: 250,
               child: FlutterMap(
                 options: MapOptions(
                   initialCenter: points.isNotEmpty 
@@ -65,11 +68,40 @@ class WalkDetailView extends StatelessWidget {
                 ],
               ),
             ),
+            
             Padding(
               padding: const EdgeInsets.all(20.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // 함께한 친구들 표시
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryGreen.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.primaryGreen.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.pets, color: AppColors.primaryGreen, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            petNames.isEmpty ? '혼자 산책함' : petNames.join(', '),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primaryGreen,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -94,6 +126,39 @@ class WalkDetailView extends StatelessWidget {
                     ],
                   ),
                   const Divider(height: 32),
+                  
+                  // 인증 사진 표시
+                  if (imageUrls.isNotEmpty) ...[
+                    const Text(
+                      '산책 인증 사진',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        imageUrls.first,
+                        width: double.infinity,
+                        height: 250,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Container(
+                            height: 250,
+                            color: Colors.grey[200],
+                            child: const Center(child: CircularProgressIndicator()),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          height: 200,
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.error),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
                   const Text(
                     '산책 메모',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
