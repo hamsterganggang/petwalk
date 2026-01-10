@@ -23,19 +23,30 @@ class _HomePageState extends State<HomePage> {
   
   int _currentIndex = 0;
 
-  final List<Widget> _tabs = [
-    const HomeTab(),
-    const PetsTab(),
-    const WalksTab(),
-    const SocialTab(),
-    const ProfileTab(),
-  ];
+  late final List<Widget> _tabs;
 
   @override
   void initState() {
     super.initState();
+    // HomeTab에 탭 변경 콜백 전달
+    _tabs = [
+      HomeTab(onTabChange: changeTab),
+      const PetsTab(),
+      const WalksTab(),
+      const SocialTab(),
+      const ProfileTab(),
+    ];
     // 인증 상태 리스너 추가
     _authState.addListener(_onAuthStateChanged);
+  }
+
+  /// 탭 인덱스 변경 (외부에서 호출 가능)
+  void changeTab(int index) {
+    if (index >= 0 && index < _tabs.length) {
+      setState(() {
+        _currentIndex = index;
+      });
+    }
   }
 
   @override

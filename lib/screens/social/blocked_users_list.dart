@@ -14,6 +14,7 @@ class _BlockedUsersListState extends State<BlockedUsersList> {
   final BlockService _blockService = BlockService();
   List<Map<String, dynamic>> _blockedUsers = [];
   bool _isLoading = true;
+  bool _hasUnblocked = false;
 
   @override
   void initState() {
@@ -59,6 +60,7 @@ class _BlockedUsersListState extends State<BlockedUsersList> {
       if (mounted) {
         setState(() {
           _blockedUsers.removeWhere((user) => user['blockId'] == blockId);
+          _hasUnblocked = true; // 차단 해제 플래그 설정
         });
         
         ScaffoldMessenger.of(context).showSnackBar(
@@ -84,13 +86,32 @@ class _BlockedUsersListState extends State<BlockedUsersList> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('차단된 사용자'),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _blockedUsers.isEmpty
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (!didPop) {
+          // 차단 해제가 발생했으면 true 반환하여 프로필 화면에서 업데이트하도록 함
+          Navigator.of(context).pop(_hasUnblocked);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          title: const Text('차단된 사용자'),
+          backgroundColor: Colors.white,
+          elevation: 0,
+          iconTheme: IconThemeData(color: Colors.grey[900]),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              // 차단 해제가 발생했으면 true 반환하여 프로필 화면에서 업데이트하도록 함
+              Navigator.of(context).pop(_hasUnblocked);
+            },
+          ),
+        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _blockedUsers.isEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -119,8 +140,11 @@ class _BlockedUsersListState extends State<BlockedUsersList> {
                       final user = _blockedUsers[index];
                       final userId = user['uid'] as String? ?? 
                                    (user['id'] as String? ?? '');
-                      final nickname = user['nickname'] as String? ?? '이름 없음';
-                      final profileImageUrl = user['photoURL'] as String?;
+                      final nickname = user['nickname'] as String? ?? 
+                                     (user['displayName'] as String? ?? '이름 없음');
+                      final profileImageUrl = user['photoURL'] as String? ?? 
+                                            user['photoUrl'] as String? ??
+                                            user['profileImageUrl'] as String?;
                       final blockId = user['blockId'] as String? ?? '';
 
                       return Card(
@@ -160,6 +184,7 @@ class _BlockedUsersListState extends State<BlockedUsersList> {
                     },
                   ),
                 ),
+      ),
     );
   }
 }
