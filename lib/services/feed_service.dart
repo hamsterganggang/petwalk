@@ -291,17 +291,47 @@ class FeedService {
     try {
       // Firestore의 whereIn은 최대 10개까지만 지원
       final userMap = <String, Map<String, dynamic>>{};
+      final foundIds = <String>{};
 
       // 10개씩 나누어 조회
       for (var i = 0; i < userIds.length; i += 10) {
         final batch = userIds.skip(i).take(10).toList();
-        final userSnapshot = await _firestore
-            .collection('users')
-            .where(FieldPath.documentId, whereIn: batch)
-            .get();
+        
+        // 1. profiles 컬렉션에서 먼저 조회 (이메일 가입 사용자는 여기에 저장됨)
+        try {
+          final profilesSnapshot = await _firestore
+              .collection('profiles')
+              .where(FieldPath.documentId, whereIn: batch)
+              .get();
 
-        for (var doc in userSnapshot.docs) {
-          userMap[doc.id] = doc.data();
+          for (var doc in profilesSnapshot.docs) {
+            final data = doc.data();
+            userMap[doc.id] = data;
+            foundIds.add(doc.id);
+          }
+        } catch (e) {
+          print('profiles 컬렉션 조회 오류: $e');
+        }
+
+        // 2. profiles에서 찾지 못한 경우 users 컬렉션에서 조회 (구글 로그인 사용자 호환성)
+        final notFoundInProfiles = batch.where((id) => !foundIds.contains(id)).toList();
+        if (notFoundInProfiles.isNotEmpty) {
+          try {
+            final usersSnapshot = await _firestore
+                .collection('users')
+                .where(FieldPath.documentId, whereIn: notFoundInProfiles)
+                .get();
+
+            for (var doc in usersSnapshot.docs) {
+              if (!userMap.containsKey(doc.id)) {
+                final data = doc.data();
+                userMap[doc.id] = data;
+                foundIds.add(doc.id);
+              }
+            }
+          } catch (e) {
+            print('users 컬렉션 조회 오류: $e');
+          }
         }
       }
 

@@ -100,13 +100,30 @@ class FollowService {
     if (nickname.isEmpty) {
       return [];
     }
-    final querySnapshot = await _firestore
-        .collection('profiles')
-        .where('nickname', isGreaterThanOrEqualTo: nickname)
-        .where('nickname', isLessThan: '$nickname\uf8ff')
-        .limit(20)
-        .get();
-    return querySnapshot.docs;
+    try {
+      final querySnapshot = await _firestore
+          .collection('profiles')
+          .where('nickname', isGreaterThanOrEqualTo: nickname)
+          .where('nickname', isLessThan: '$nickname\uf8ff')
+          .limit(20)
+          .get();
+      
+      // 중복 제거: 같은 문서 ID가 여러 번 반환되는 경우 방지
+      final seenIds = <String>{};
+      final uniqueDocs = <QueryDocumentSnapshot>[];
+      
+      for (var doc in querySnapshot.docs) {
+        if (!seenIds.contains(doc.id)) {
+          seenIds.add(doc.id);
+          uniqueDocs.add(doc);
+        }
+      }
+      
+      return uniqueDocs;
+    } catch (e) {
+      print('사용자 검색 오류: $e');
+      return [];
+    }
   }
 
   // 팔로워 목록 가져오기
