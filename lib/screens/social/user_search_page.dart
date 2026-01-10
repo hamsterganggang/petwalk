@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:petwalk/models/user_model.dart';
 import 'package:petwalk/services/follow_service.dart';
+import 'package:petwalk/services/block_service.dart';
 import 'package:petwalk/widgets/user_profile_card.dart';
 
 class UserSearchPage extends StatefulWidget {
@@ -15,10 +16,18 @@ class UserSearchPage extends StatefulWidget {
 class _UserSearchPageState extends State<UserSearchPage> {
   final TextEditingController _searchController = TextEditingController();
   final FollowService _followService = FollowService();
+  final BlockService _blockService = BlockService();
   List<UserModel> _searchResults = [];
   bool _isLoading = false;
   bool _hasSearched = false;
   Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    // BlockService 초기화
+    _blockService.initialize();
+  }
 
   @override
   void dispose() {
@@ -52,10 +61,18 @@ class _UserSearchPageState extends State<UserSearchPage> {
       return;
     }
 
+    // BlockService 초기화 확인
+    await _blockService.initialize();
+
     final docs = await _followService.searchUsers(query);
     if (mounted) {
+      var results = docs.map((doc) => UserModel.fromFirestore(doc)).toList();
+      
+      // 차단된 사용자 필터링 (차단된 사용자는 검색 결과에서 제외)
+      results = _blockService.filterBlockedUsers(results);
+      
       setState(() {
-        _searchResults = docs.map((doc) => UserModel.fromFirestore(doc)).toList();
+        _searchResults = results;
         _isLoading = false;
       });
     }
@@ -125,7 +142,16 @@ class _UserSearchPageState extends State<UserSearchPage> {
     return ListView.builder(
       itemCount: _searchResults.length,
       itemBuilder: (context, index) {
-        return UserProfileCard(user: _searchResults[index]);
+        final user = _searchResults[index];
+        return UserProfileCard(
+          user: user,
+          onBlocked: () {
+            // 차단된 사용자를 검색 결과에서 즉시 제거
+            setState(() {
+              _searchResults.removeWhere((u) => u.uid == user.uid);
+            });
+          },
+        );
       },
     );
   }
