@@ -98,18 +98,13 @@ class _UserSearchPageState extends State<UserSearchPage> {
     try {
       bool isFollowingUser = await profileManager.isFollowing(user.uid);
       
-      // 즉시 UI 업데이트를 위해 상태 변경
-      setState(() {
-        // 임시로 버튼 상태 변경 (실시간 반영)
-      });
-      
       if (isFollowingUser) {
         await profileManager.unfollowUser(user.uid);
       } else {
         await profileManager.followUser(user.uid);
       }
       
-      // 팔로우/언팔로우 성공 후 검색 결과 새로고침
+      // 검색 결과 새로고침
       if (_searchController.text.isNotEmpty) {
         await _searchUsers(_searchController.text);
       }
