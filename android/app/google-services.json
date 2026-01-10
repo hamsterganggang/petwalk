@@ -22,11 +22,27 @@
           }
         },
         {
+          "client_id": "125120646156-c14rnq1e1ppfrahqu7urmp0md3rreenj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.petwalk",
+            "certificate_hash": "d408dda817fed7ed1e5e0166018ba91d7e6ff87e"
+          }
+        },
+        {
           "client_id": "125120646156-eqgj177fsg2pedneeepae8a5tnb64vs8.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.example.petwalk",
             "certificate_hash": "36d7333b2bf0ec435385383a58eb9cdf4d8bbc7f"
+          }
+        },
+        {
+          "client_id": "125120646156-msfchtfta20i8gf4f6k2b5h5k8he0r1c.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.petwalk",
+            "certificate_hash": "e31f33346ed0ba4e4273e84f7b76de2b04e9a961"
           }
         },
         {
