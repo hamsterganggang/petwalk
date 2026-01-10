@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'walk_map_view.dart';
 import 'walk_history_list.dart';
 import 'statistics_view.dart';
+import '../utils/location_permission_helper.dart';
 
 class WalksTab extends StatelessWidget {
   const WalksTab({super.key});
@@ -23,10 +24,22 @@ class WalksTab extends StatelessWidget {
               subtitle: '반려견과 함께 즐거운 산책을 떠나보세요',
               icon: Icons.directions_walk,
               color: Theme.of(context).primaryColor,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const WalkMapView()),
-              ),
+              onTap: () async {
+                final hasPermission = await LocationPermissionHelper.requestLocationPermission();
+                if (hasPermission && context.mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const WalkMapView()),
+                  );
+                } else if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('산책 기능을 이용하려면 위치 권한이 필요합니다.'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                }
+              },
             ),
             const SizedBox(height: 16),
             Row(
