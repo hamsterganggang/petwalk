@@ -61,15 +61,51 @@ class _AnimalListViewState extends State<AnimalListView> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // 이름
-                      Text(
-                        animal.name,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      // 이름과 대표 동물 뱃지
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              animal.name,
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (animal.isPrimary)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryGreen,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.star,
+                                    size: 14,
+                                    color: Colors.white,
+                                  ),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    '대표',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       // 품종 또는 종류
@@ -124,6 +160,8 @@ class _AnimalListViewState extends State<AnimalListView> {
               onSelected: (String value) {
                 if (value == 'edit') {
                   _navigateToEditPage(animal, provider);
+                } else if (value == 'setPrimary') {
+                  _setPrimaryAnimal(animal, provider);
                 } else if (value == 'delete') {
                   _showDeleteConfirmDialog(animal).then((confirmed) async {
                     if (confirmed == true && mounted) {
@@ -155,6 +193,30 @@ class _AnimalListViewState extends State<AnimalListView> {
                       Icon(Icons.edit, size: 20, color: AppColors.textDark),
                       SizedBox(width: 12),
                       Text('수정'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem<String>(
+                  value: 'setPrimary',
+                  enabled: !animal.isPrimary,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.star,
+                        size: 20,
+                        color: animal.isPrimary
+                            ? AppColors.textSecondary
+                            : AppColors.primaryGreen,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        animal.isPrimary ? '대표 동물 (설정됨)' : '대표 동물로 설정',
+                        style: TextStyle(
+                          color: animal.isPrimary
+                              ? AppColors.textSecondary
+                              : AppColors.textDark,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -216,6 +278,58 @@ class _AnimalListViewState extends State<AnimalListView> {
 
     if (result == true && mounted) {
       await provider.refresh();
+    }
+  }
+
+  /// 대표 동물 설정
+  Future<void> _setPrimaryAnimal(
+    AnimalDataModel animal,
+    AnimalListProvider provider,
+  ) async {
+    if (animal.isPrimary) {
+      return; // 이미 대표 동물이면 무시
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('대표 동물 설정'),
+          content: Text('${animal.name}을(를) 대표 동물로 설정하시겠습니까?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primaryGreen,
+              ),
+              child: const Text('설정'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && mounted) {
+      final success = await provider.setPrimaryAnimal(animal.id);
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${animal.name}이(가) 대표 동물로 설정되었습니다.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      } else if (mounted && provider.errorMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(provider.errorMessage!),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 

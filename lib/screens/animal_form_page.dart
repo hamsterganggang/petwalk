@@ -29,55 +29,15 @@ class _AnimalFormPageState extends State<AnimalFormPage> {
   late TextEditingController _weightController;
 
   final String _fixedType = '강아지';
-  String? _selectedBreed;
+  late TextEditingController _breedController;
   DateTime? _selectedBirthDate;
   String? _selectedGender;
   bool _isNeutered = false;
+  bool _isPrimary = false;
   File? _selectedImage;
   String? _imageUrl;
   bool _deletePhoto = false;
   bool _isLoading = false;
-
-  final List<String> _dogBreeds = [
-    '골든 리트리버',
-    '꼬또 드 툴레아',
-    '닥스훈트',
-    '달마시안',
-    '도베르만',
-    '래브라도 리트리버',
-    '로트와일러',
-    '말라뮤트',
-    '말티즈',
-    '말티푸',
-    '보더 콜리',
-    '불독',
-    '비글',
-    '비숑 프리제',
-    '사모예드',
-    '삽살개',
-    '셔틀랜드 쉽독',
-    '셰퍼드',
-    '슈나우저',
-    '스피츠',
-    '시바 이누',
-    '시추',
-    '아키타',
-    '요크셔 테리어',
-    '웰시 코기',
-    '이탈리안 그레이하운드',
-    '잭 러셀 테리어',
-    '진돗개',
-    '치와와',
-    '코커 스파니엘',
-    '퍼그',
-    '페키니즈',
-    '포메라니안',
-    '푸들',
-    '풍산개',
-    '프렌치 불독',
-    '허스키',
-    '기타',
-  ];
 
   final List<String> _genders = ['수컷', '암컷'];
 
@@ -91,15 +51,20 @@ class _AnimalFormPageState extends State<AnimalFormPage> {
       _weightController = TextEditingController(
         text: animal.weight.toStringAsFixed(1),
       );
-      _selectedBreed = animal.breed;
+      _breedController = TextEditingController(text: animal.breed ?? '');
       _selectedBirthDate = animal.birthDate;
       _selectedGender = animal.gender;
       _isNeutered = animal.isNeutered;
+      _isPrimary = animal.isPrimary;
       _imageUrl = animal.photoUrl;
     } else {
       _nameController = TextEditingController();
       _weightController = TextEditingController();
+      _breedController = TextEditingController();
       _selectedBirthDate = DateTime.now().subtract(const Duration(days: 365));
+      // 등록 모드일 때, 첫 번째 반려동물이면 자동으로 대표 동물로 설정
+      // (AnimalService에서 처리하므로 여기서는 false로 시작)
+      _isPrimary = false;
     }
   }
 
@@ -107,6 +72,7 @@ class _AnimalFormPageState extends State<AnimalFormPage> {
   void dispose() {
     _nameController.dispose();
     _weightController.dispose();
+    _breedController.dispose();
     super.dispose();
   }
 
@@ -239,13 +205,13 @@ class _AnimalFormPageState extends State<AnimalFormPage> {
         ownerId: user.uid,
         name: _nameController.text.trim(),
         type: _fixedType, // 강아지로 고정 저장
-        breed: _selectedBreed,
+        breed: _breedController.text.trim().isEmpty ? null : _breedController.text.trim(),
         birthDate: _selectedBirthDate!,
         gender: _selectedGender!,
         isNeutered: _isNeutered,
         weight: weight,
         photoUrl: _imageUrl,
-        isPrimary: false,
+        isPrimary: _isPrimary,
         createdAt: widget.animal?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -259,6 +225,8 @@ class _AnimalFormPageState extends State<AnimalFormPage> {
           _deletePhoto,
         );
       } else {
+        // 등록 모드일 때, 첫 번째 반려동물이면 자동으로 대표로 설정
+        // (AnimalService에서 처리하므로 여기서는 그대로 전달)
         success = await provider.addNewAnimal(animal, _selectedImage);
       }
 
@@ -403,32 +371,28 @@ class _AnimalFormPageState extends State<AnimalFormPage> {
                 enabled: !_isLoading && !provider.isUpdating,
               ),
               const SizedBox(height: 16),
-              // 품종 선택 (강아지 품종 리스트만 표시)
-              DropdownButtonFormField<String>(
-                value: _selectedBreed,
+              // 품종 입력 (텍스트 입력)
+              TextFormField(
+                controller: _breedController,
                 decoration: const InputDecoration(
                   labelText: '품종 *',
+                  hintText: '품종을 입력하세요',
                   prefixIcon: Icon(Icons.pets),
                 ),
-                items: _dogBreeds.map((String breed) {
-                  return DropdownMenuItem<String>(
-                    value: breed,
-                    child: Text(breed),
-                  );
-                }).toList(),
-                onChanged: (_isLoading || provider.isUpdating)
-                    ? null
-                    : (String? newValue) {
-                  setState(() {
-                    _selectedBreed = newValue;
-                  });
-                },
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return '품종을 선택해주세요.';
+                  if (value == null || value.trim().isEmpty) {
+                    return '품종을 입력해주세요.';
+                  }
+                  if (value.trim().length < 1) {
+                    return '품종을 입력해주세요.';
+                  }
+                  if (value.trim().length > 30) {
+                    return '품종은 30자 이하여야 합니다.';
                   }
                   return null;
                 },
+                maxLength: 30,
+                enabled: !_isLoading && !provider.isUpdating,
               ),
               const SizedBox(height: 16),
               // 생년월일
@@ -511,7 +475,65 @@ class _AnimalFormPageState extends State<AnimalFormPage> {
                   });
                 },
               ),
+              const SizedBox(height: 8),
+              // 대표 동물 설정
+              SwitchListTile(
+                title: Row(
+                  children: [
+                    const Text('대표 동물 설정'),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.star,
+                      size: 20,
+                      color: _isPrimary
+                          ? AppColors.primaryGreen
+                          : AppColors.textSecondary,
+                    ),
+                  ],
+                ),
+                subtitle: const Text(
+                  '대표 동물로 설정하면 목록의 맨 위에 표시됩니다',
+                  style: TextStyle(fontSize: 12),
+                ),
+                value: _isPrimary,
+                onChanged: (_isLoading || provider.isUpdating)
+                    ? null
+                    : (bool value) {
+                  setState(() {
+                    _isPrimary = value;
+                  });
+                },
+              ),
               const SizedBox(height: 32),
+              // 저장 버튼 (하단)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: (_isLoading || provider.isUpdating) ? null : _handleSave,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: AppColors.primaryGreen,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: (_isLoading || provider.isUpdating)
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text(
+                          '저장',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(height: 16),
             ],
           ),
         ),
