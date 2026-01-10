@@ -386,8 +386,8 @@ class _AnimalFormPageState extends State<AnimalFormPage> {
                   if (value.trim().length < 1) {
                     return '품종을 입력해주세요.';
                   }
-                  if (value.trim().length > 30) {
-                    return '품종은 30자 이하여야 합니다.';
+                  if (value.trim().length > 40) {
+                    return '품종은 40자 이하여야 합니다.';
                   }
                   return null;
                 },
