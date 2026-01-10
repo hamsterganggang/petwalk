@@ -7,8 +7,10 @@ import '../providers/user_auth_state.dart';
 import '../models/user_profile.dart';
 import '../utils/theme_config.dart';
 import '../services/google_signin_handler.dart';
+import '../services/block_service.dart';
+import '../services/follow_service.dart';
 import '../screens/edit_profile_page.dart';
-import '../screens/blocked_users_list.dart';
+import '../screens/social/blocked_users_list.dart';
 import '../screens/followers_page.dart';
 import '../screens/following_page.dart';
 
@@ -20,13 +22,75 @@ class ProfileView extends StatefulWidget {
 }
 
 class _ProfileViewState extends State<ProfileView> {
+  final BlockService _blockService = BlockService();
+  final FollowService _followService = FollowService();
+  int? _filteredFollowingCount;
+  int? _filteredFollowersCount;
+  bool _isCalculatingCounts = false;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final profileManager = Provider.of<ProfileStateManager>(context, listen: false);
-      profileManager.loadProfileData();
+      
+      // BlockService 초기화
+      await _blockService.initialize();
+      
+      // 프로필 데이터 로드
+      await profileManager.loadProfileData();
+      
+      // 필터링된 개수 계산 (로딩 완료 전에)
+      if (mounted) {
+        setState(() {
+          _isCalculatingCounts = true;
+        });
+      }
+      await _updateFilteredCounts(profileManager.profile?.uid);
+      if (mounted) {
+        setState(() {
+          _isCalculatingCounts = false;
+        });
+      }
     });
+  }
+
+  /// 차단된 사용자를 제외한 팔로잉/팔로워 수 계산
+  Future<void> _updateFilteredCounts(String? userId) async {
+    if (userId == null) {
+      setState(() {
+        _filteredFollowingCount = null;
+        _filteredFollowersCount = null;
+      });
+      return;
+    }
+
+    try {
+      await _blockService.initialize();
+
+      // 팔로잉 목록 가져오기 및 필터링
+      final followingList = await _followService.getFollowing(userId);
+      final filteredFollowing = _blockService.filterBlockedUsers(followingList);
+
+      // 팔로워 목록 가져오기 및 필터링
+      final followersList = await _followService.getFollowers(userId);
+      final filteredFollowers = _blockService.filterBlockedUsers(followersList);
+
+      if (mounted) {
+        setState(() {
+          _filteredFollowingCount = filteredFollowing.length;
+          _filteredFollowersCount = filteredFollowers.length;
+        });
+      }
+    } catch (e) {
+      print('필터링된 팔로잉/팔로워 수 계산 오류: $e');
+      if (mounted) {
+        setState(() {
+          _filteredFollowingCount = null;
+          _filteredFollowersCount = null;
+        });
+      }
+    }
   }
 
   Future<void> _requestLocationPermission(ProfileStateManager profileManager) async {
@@ -228,15 +292,15 @@ class _ProfileViewState extends State<ProfileView> {
     return Consumer2<ProfileStateManager, UserAuthState>(
       builder: (context, profileManager, authState, child) {
         final profile = profileManager.profile;
-        final isLoading = profileManager.isLoading || authState.isLoading;
+        final isLoading = profileManager.isLoading || authState.isLoading || _isCalculatingCounts;
 
-        if (isLoading) {
+        if (isLoading || profile == null) {
           return const Center(
             child: CircularProgressIndicator(),
           );
         }
 
-        if (!profileManager.isLoading && profile == null) {
+        if (!isLoading && profile == null) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -262,6 +326,17 @@ class _ProfileViewState extends State<ProfileView> {
                       : () async {
                     profileManager.clearError();
                     await profileManager.loadProfileData();
+                    if (mounted && profileManager.profile != null) {
+                      setState(() {
+                        _isCalculatingCounts = true;
+                      });
+                      await _updateFilteredCounts(profileManager.profile?.uid);
+                      if (mounted) {
+                        setState(() {
+                          _isCalculatingCounts = false;
+                        });
+                      }
+                    }
                   },
                   child: const Text('다시 시도'),
                 ),
@@ -273,6 +348,17 @@ class _ProfileViewState extends State<ProfileView> {
         return RefreshIndicator(
           onRefresh: () async {
             await profileManager.refresh();
+            if (mounted && profileManager.profile != null) {
+              setState(() {
+                _isCalculatingCounts = true;
+              });
+              await _updateFilteredCounts(profileManager.profile?.uid);
+              if (mounted) {
+                setState(() {
+                  _isCalculatingCounts = false;
+                });
+              }
+            }
           },
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
@@ -316,12 +402,18 @@ class _ProfileViewState extends State<ProfileView> {
                   children: [
                     GestureDetector(
                       onTap: () => _showFollowersList(context, profileManager),
-                      child: _buildFollowerInfo('팔로워', profile?.followers ?? 0),
+                      child: _buildFollowerInfo(
+                        '팔로워',
+                        _filteredFollowersCount ?? profile?.followers ?? 0,
+                      ),
                     ),
                     const SizedBox(width: 40),
                     GestureDetector(
                       onTap: () => _showFollowingList(context, profileManager),
-                      child: _buildFollowerInfo('팔로잉', profile?.following ?? 0),
+                      child: _buildFollowerInfo(
+                        '팔로잉',
+                        _filteredFollowingCount ?? profile?.following ?? 0,
+                      ),
                     ),
                   ],
                 ),
@@ -387,13 +479,26 @@ class _ProfileViewState extends State<ProfileView> {
                         leading: const Icon(Icons.block),
                         title: const Text('차단된 사용자'),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          Navigator.push(
+                        onTap: () async {
+                          final result = await Navigator.push<bool>(
                             context,
                             MaterialPageRoute(
                               builder: (context) => const BlockedUsersList(),
                             ),
                           );
+                          
+                          // 차단 해제가 발생했으면 필터링된 개수 재계산
+                          if (result == true && mounted && profileManager.profile != null) {
+                            setState(() {
+                              _isCalculatingCounts = true;
+                            });
+                            await _updateFilteredCounts(profileManager.profile?.uid);
+                            if (mounted) {
+                              setState(() {
+                                _isCalculatingCounts = false;
+                              });
+                            }
+                          }
                         },
                       ),
                       const Divider(height: 1),
