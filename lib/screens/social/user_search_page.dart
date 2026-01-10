@@ -93,9 +93,19 @@ class _UserSearchPageState extends State<UserSearchPage> {
 
       final searchDocs = await _followService.searchUsers(trimmedQuery);
       
+      // 중복 제거를 위한 Set 사용
+      final seenUids = <String>{};
       List<UserProfile> users = [];
+      
       for (final doc in searchDocs) {
         final user = UserProfile.fromFirestore(doc);
+        
+        // 중복 체크: 같은 uid가 이미 추가되었는지 확인
+        if (seenUids.contains(user.uid)) {
+          continue; // 이미 추가된 사용자는 건너뛰기
+        }
+        seenUids.add(user.uid);
+        
         // 자신은 검색 결과에서 제외
         if (currentUserId == null || user.uid != currentUserId) {
           // 차단된 사용자도 제외
