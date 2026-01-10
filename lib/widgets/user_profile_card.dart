@@ -10,7 +10,7 @@ class UserProfileCard extends StatefulWidget {
   final VoidCallback? onBlocked; // 차단 후 콜백
 
   const UserProfileCard({
-    super.key, 
+    super.key,
     required this.user,
     this.onBlocked,
   });
@@ -39,14 +39,14 @@ class _UserProfileCardState extends State<UserProfileCard> {
       setState(() => _isLoading = false);
       return;
     }
-    
+
     // BlockService 초기화
     await _blockService.initialize();
-    
+
     // 팔로우 상태 및 차단 상태 확인
     final isFollowing = await _followService.isFollowing(_currentUserId, widget.user.uid);
     final isBlocked = _blockService.isBlocked(widget.user.uid);
-    
+
     if (mounted) {
       setState(() {
         _isFollowing = isFollowing;
@@ -128,16 +128,24 @@ class _UserProfileCardState extends State<UserProfileCard> {
     if (confirm == true) {
       try {
         await _blockService.blockUser(widget.user.uid);
+
+        // 양방향 팔로우 관계 모두 취소 (내가 팔로우하는 경우 + 상대방이 나를 팔로우하는 경우)
+        await _followService.removeAllFollowRelationships(
+          _currentUserId,
+          widget.user.uid,
+        );
+
         await _blockService.refresh();
-        
+
         if (mounted) {
           setState(() {
             _isBlocked = true;
+            _isFollowing = false; // 차단 시 팔로우 상태도 false로 설정
           });
-          
+
           // 차단 후 콜백 호출 (검색 결과에서 제거)
           widget.onBlocked?.call();
-          
+
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('사용자가 차단되었습니다.'),
@@ -182,12 +190,12 @@ class _UserProfileCardState extends State<UserProfileCard> {
       try {
         await _blockService.unblockUser(widget.user.uid);
         await _blockService.refresh();
-        
+
         if (mounted) {
           setState(() {
             _isBlocked = false;
           });
-          
+
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('차단이 해제되었습니다.'),
@@ -243,50 +251,50 @@ class _UserProfileCardState extends State<UserProfileCard> {
             ),
             if (!isCurrentUser) // 내 프로필이 아닐 때만 버튼 표시
               _isLoading
-                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) 
+                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
                   : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          height: 36,
-                          child: ElevatedButton(
-                            onPressed: _toggleFollow,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _isFollowing ? Colors.grey[300] : theme.colorScheme.primary,
-                              foregroundColor: _isFollowing ? theme.colorScheme.onSurface : theme.colorScheme.onPrimary,
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              textStyle: theme.textTheme.labelLarge,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    height: 36,
+                    child: ElevatedButton(
+                      onPressed: _toggleFollow,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isFollowing ? Colors.grey[300] : theme.colorScheme.primary,
+                        foregroundColor: _isFollowing ? theme.colorScheme.onSurface : theme.colorScheme.onPrimary,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        textStyle: theme.textTheme.labelLarge,
+                      ),
+                      child: Text(_isFollowing ? '언팔로우' : '팔로우'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert),
+                    onSelected: (value) {
+                      if (value == 'block' || value == 'unblock') {
+                        _blockUser();
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: _isBlocked ? 'unblock' : 'block',
+                        child: Row(
+                          children: [
+                            Icon(
+                              _isBlocked ? Icons.check_circle_outline : Icons.block,
+                              size: 20,
+                              color: _isBlocked ? AppColors.primaryGreen : AppColors.textGrey,
                             ),
-                            child: Text(_isFollowing ? '언팔로우' : '팔로우'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert),
-                          onSelected: (value) {
-                            if (value == 'block' || value == 'unblock') {
-                              _blockUser();
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            PopupMenuItem(
-                              value: _isBlocked ? 'unblock' : 'block',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    _isBlocked ? Icons.check_circle_outline : Icons.block,
-                                    size: 20,
-                                    color: _isBlocked ? AppColors.primaryGreen : AppColors.textGrey,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(_isBlocked ? '차단 해제' : '차단'),
-                                ],
-                              ),
-                            ),
+                            const SizedBox(width: 8),
+                            Text(_isBlocked ? '차단 해제' : '차단'),
                           ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
           ],
         ),
       ),

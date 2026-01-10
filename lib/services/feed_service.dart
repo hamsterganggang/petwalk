@@ -15,7 +15,7 @@ class FeedItem {
   final DateTime createdAt;
   final int likeCount;
   final bool isLiked;
-  
+
   // 사용자 정보
   final String? userNickname;
   final String? userProfileImageUrl;
@@ -117,11 +117,11 @@ class FeedService {
 
       // 페이지네이션을 위해 충분한 수의 문서를 가져옴
       final fetchLimit = _pageSize * 3; // 중복 제거를 위해 더 많이 가져옴
-      
+
       // 공개 기록과 내 기록 쿼리 실행
       QuerySnapshot publicSnapshot;
       QuerySnapshot? userSnapshot;
-      
+
       if (userQuery != null) {
         final userFuture = userQuery.limit(fetchLimit).get();
         final results = await Future.wait<QuerySnapshot>([
@@ -161,11 +161,11 @@ class FeedService {
 
       // 모든 문서를 합치고 중복 제거 (walkId 기준)
       final allDocs = <String, QueryDocumentSnapshot>{};
-      
+
       for (var doc in publicSnapshot.docs) {
         allDocs[doc.id] = doc;
       }
-      
+
       if (userSnapshot != null) {
         for (var doc in userSnapshot.docs) {
           allDocs[doc.id] = doc; // 중복이면 덮어쓰기 (같은 문서)
@@ -184,18 +184,18 @@ class FeedService {
         ..sort((a, b) {
           final aData = a.data() as Map<String, dynamic>;
           final bData = b.data() as Map<String, dynamic>;
-          
+
           // createdAt이 있으면 createdAt 기준, 없으면 startTime 기준
           Timestamp? aTime = aData['createdAt'] as Timestamp?;
           Timestamp? bTime = bData['createdAt'] as Timestamp?;
-          
+
           if (aTime == null) {
             aTime = aData['startTime'] as Timestamp?;
           }
           if (bTime == null) {
             bTime = bData['startTime'] as Timestamp?;
           }
-          
+
           if (aTime == null && bTime == null) return 0;
           if (aTime == null) return 1;
           if (bTime == null) return -1;
@@ -224,9 +224,9 @@ class FeedService {
       // 사용자 ID 목록 추출
       final userIds = paginatedDocs
           .map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            return data['userId'] as String;
-          })
+        final data = doc.data() as Map<String, dynamic>;
+        return data['userId'] as String;
+      })
           .toSet()
           .toList();
 
@@ -243,9 +243,9 @@ class FeedService {
         final startTime = (data['startTime'] as Timestamp).toDate();
         final endTime = (data['endTime'] as Timestamp).toDate();
         // createdAt이 없으면 startTime 사용
-        final createdAt = (data['createdAt'] as Timestamp?)?.toDate() ?? 
-                         startTime;
-        
+        final createdAt = (data['createdAt'] as Timestamp?)?.toDate() ??
+            startTime;
+
         items.add(FeedItem(
           walkId: doc.id,
           userId: userId,
@@ -261,12 +261,14 @@ class FeedService {
           likeCount: (data['likeCount'] as int?) ?? 0,
           isLiked: likeStatusMap[doc.id] ?? false,
           userNickname: userInfo?['nickname'] as String?,
-          userProfileImageUrl: userInfo?['photoURL'] as String?,
+          userProfileImageUrl: (userInfo?['photoURL'] as String?) ??
+              (userInfo?['photoUrl'] as String?) ??
+              (userInfo?['profileImageUrl'] as String?),
         ));
       }
 
-      final DocumentSnapshot? lastDoc = paginatedDocs.isNotEmpty 
-          ? paginatedDocs.last 
+      final DocumentSnapshot? lastDoc = paginatedDocs.isNotEmpty
+          ? paginatedDocs.last
           : null;
 
       return (items: items, lastDoc: lastDoc);
@@ -289,7 +291,7 @@ class FeedService {
     try {
       // Firestore의 whereIn은 최대 10개까지만 지원
       final userMap = <String, Map<String, dynamic>>{};
-      
+
       // 10개씩 나누어 조회
       for (var i = 0; i < userIds.length; i += 10) {
         final batch = userIds.skip(i).take(10).toList();

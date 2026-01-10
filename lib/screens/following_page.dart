@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_profile.dart';
 import '../providers/profile_state_manager.dart';
 import '../services/follow_service.dart';
@@ -40,13 +41,13 @@ class _FollowingPageState extends State<FollowingPage> {
   Future<void> _loadFollowing() async {
     // BlockService 초기화 확인
     await _blockService.initialize();
-    
+
     // 팔로잉 목록 가져오기
     final followingList = await _followService.getFollowing(widget.userId);
-    
+
     // 차단된 사용자 필터링
     final filteredList = _blockService.filterBlockedUsers(followingList);
-    
+
     if (mounted) {
       setState(() {
         _followingFuture = Future.value(filteredList);
@@ -56,22 +57,22 @@ class _FollowingPageState extends State<FollowingPage> {
 
   Future<void> _toggleFollow(UserProfile user) async {
     final profileManager = Provider.of<ProfileStateManager>(context, listen: false);
-    
+
     if (_isLoading) return;
-    
+
     setState(() {
       _isLoading = true;
     });
 
     try {
       bool isFollowingUser = await profileManager.isFollowing(user.uid);
-      
+
       if (isFollowingUser) {
         await profileManager.unfollowUser(user.uid);
       } else {
         await profileManager.followUser(user.uid);
       }
-      
+
       await _loadFollowing();
     } catch (e) {
       if (mounted) {
@@ -94,7 +95,7 @@ class _FollowingPageState extends State<FollowingPage> {
   /// 사용자 차단 처리 (차단 시 자동 언팔로우)
   Future<void> _blockUser(UserProfile user) async {
     final profileManager = Provider.of<ProfileStateManager>(context, listen: false);
-    
+
     if (_isLoading) return;
 
     // 차단 확인 다이얼로그
@@ -126,20 +127,19 @@ class _FollowingPageState extends State<FollowingPage> {
     });
 
     try {
-      // 차단 전에 팔로우 중인지 확인
-      final isFollowing = await profileManager.isFollowing(user.uid);
-      
       // 사용자 차단
       await _blockService.blockUser(user.uid);
-      
-      // 팔로우 중이었다면 자동 언팔로우
-      if (isFollowing) {
-        await profileManager.unfollowUser(user.uid);
-      }
-      
+
+      // 양방향 팔로우 관계 모두 취소 (내가 팔로우하는 경우 + 상대방이 나를 팔로우하는 경우)
+      final followService = FollowService();
+      await followService.removeAllFollowRelationships(
+        (await FirebaseAuth.instance.currentUser)!.uid,
+        user.uid,
+      );
+
       // 차단 목록 새로고침
       await _blockService.refresh();
-      
+
       // 팔로잉 목록 새로고침
       await _loadFollowing();
 
@@ -261,7 +261,7 @@ class _FollowingPageState extends State<FollowingPage> {
           future: profileManager.isFollowing(user.uid),
           builder: (context, followSnapshot) {
             final isFollowing = followSnapshot.data ?? false;
-            
+
             return Container(
               decoration: BoxDecoration(
                 border: Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),

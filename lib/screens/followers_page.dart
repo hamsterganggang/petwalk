@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_profile.dart';
 import '../providers/profile_state_manager.dart';
 import '../services/follow_service.dart';
@@ -40,13 +41,13 @@ class _FollowersPageState extends State<FollowersPage> {
   Future<void> _loadFollowers() async {
     // BlockService 초기화 확인
     await _blockService.initialize();
-    
+
     // 팔로워 목록 가져오기
     final followersList = await _followService.getFollowers(widget.userId);
-    
+
     // 차단된 사용자 필터링
     final filteredList = _blockService.filterBlockedUsers(followersList);
-    
+
     if (mounted) {
       setState(() {
         _followersFuture = Future.value(filteredList);
@@ -94,7 +95,7 @@ class _FollowersPageState extends State<FollowersPage> {
   /// 사용자 차단 처리 (차단 시 자동 언팔로우)
   Future<void> _blockUser(UserProfile user) async {
     final profileManager = Provider.of<ProfileStateManager>(context, listen: false);
-    
+
     if (_isLoading) return;
 
     // 차단 확인 다이얼로그
@@ -126,20 +127,19 @@ class _FollowersPageState extends State<FollowersPage> {
     });
 
     try {
-      // 차단 전에 팔로우 중인지 확인
-      final isFollowing = await profileManager.isFollowing(user.uid);
-      
       // 사용자 차단
       await _blockService.blockUser(user.uid);
-      
-      // 팔로우 중이었다면 자동 언팔로우
-      if (isFollowing) {
-        await profileManager.unfollowUser(user.uid);
-      }
-      
+
+      // 양방향 팔로우 관계 모두 취소 (내가 팔로우하는 경우 + 상대방이 나를 팔로우하는 경우)
+      final followService = FollowService();
+      await followService.removeAllFollowRelationships(
+        (await FirebaseAuth.instance.currentUser)!.uid,
+        user.uid,
+      );
+
       // 차단 목록 새로고침
       await _blockService.refresh();
-      
+
       // 팔로워 목록 새로고침
       await _loadFollowers();
 
