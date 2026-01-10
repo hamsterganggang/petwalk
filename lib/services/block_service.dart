@@ -139,22 +139,75 @@ class BlockService {
           .map((doc) => doc.data()['blockedId'] as String)
           .toList();
 
-      // 사용자 정보 조회
+      // 사용자 정보 조회 (users와 profiles 컬렉션 모두 확인)
       final users = <Map<String, dynamic>>[];
+      final foundIds = <String>{};
+      
       for (var i = 0; i < blockedIds.length; i += 10) {
         final batch = blockedIds.skip(i).take(10).toList();
-        final userSnapshot = await _firestore
-            .collection('users')
-            .where(FieldPath.documentId, whereIn: batch)
-            .get();
+        
+        // users 컬렉션에서 조회
+        try {
+          final userSnapshot = await _firestore
+              .collection('users')
+              .where(FieldPath.documentId, whereIn: batch)
+              .get();
 
-        for (var doc in userSnapshot.docs) {
-          final data = doc.data();
-          data['blockId'] = snapshot.docs
-              .firstWhere((blockDoc) => 
-                  blockDoc.data()['blockedId'] == doc.id)
-              .id;
-          users.add(data);
+          for (var doc in userSnapshot.docs) {
+            final data = doc.data();
+            data['uid'] = doc.id; // 문서 ID를 uid로 추가
+            final blockDoc = snapshot.docs.firstWhere(
+              (blockDoc) => blockDoc.data()['blockedId'] == doc.id,
+            );
+            data['blockId'] = blockDoc.id;
+            users.add(data);
+            foundIds.add(doc.id);
+          }
+        } catch (e) {
+          print('users 컬렉션 조회 오류: $e');
+        }
+        
+        // profiles 컬렉션에서도 조회 (users에서 찾지 못한 경우)
+        final notFound = batch.where((id) => !foundIds.contains(id)).toList();
+        if (notFound.isNotEmpty) {
+          try {
+            final profileSnapshot = await _firestore
+                .collection('profiles')
+                .where(FieldPath.documentId, whereIn: notFound)
+                .get();
+
+            for (var doc in profileSnapshot.docs) {
+              final data = doc.data();
+              data['uid'] = doc.id; // 문서 ID를 uid로 추가
+              // blockId 찾기 (blockedId가 doc.id와 일치하는 문서 찾기)
+              final blockDoc = snapshot.docs.firstWhere(
+                (blockDoc) => blockDoc.data()['blockedId'] == doc.id,
+              );
+              data['blockId'] = blockDoc.id;
+              users.add(data);
+              foundIds.add(doc.id);
+            }
+          } catch (e) {
+            print('profiles 컬렉션 조회 오류: $e');
+            // 오류가 발생해도 계속 진행
+          }
+        }
+        
+        // users/profiles 컬렉션에서 모두 찾지 못한 경우, 최소한의 정보로 추가
+        final stillNotFound = batch.where((id) => !foundIds.contains(id)).toList();
+        for (var blockedId in stillNotFound) {
+          // 최소한의 사용자 정보 생성 (blockedId를 nickname으로 사용)
+          final blockDoc = snapshot.docs.firstWhere(
+            (doc) => doc.data()['blockedId'] == blockedId,
+          );
+          users.add({
+            'uid': blockedId,
+            'nickname': '사용자 ${blockedId.length > 8 ? blockedId.substring(0, 8) + '...' : blockedId}',
+            'photoURL': null,
+            'photoUrl': null,
+            'profileImageUrl': null,
+            'blockId': blockDoc.id,
+          });
         }
       }
 
@@ -192,8 +245,16 @@ class BlockService {
     return users.where((user) {
       String? userId;
       
-      // UserModel 타입 체크
-      if (user.runtimeType.toString() == 'UserModel') {
+      // UserProfile 타입 체크
+      if (user.runtimeType.toString() == 'UserProfile') {
+        try {
+          final dynamicUser = user as dynamic;
+          userId = dynamicUser.uid;
+        } catch (e) {
+          return true;
+        }
+      } else if (user.runtimeType.toString() == 'UserModel') {
+        // UserModel 타입 체크
         try {
           final dynamicUser = user as dynamic;
           userId = dynamicUser.uid;

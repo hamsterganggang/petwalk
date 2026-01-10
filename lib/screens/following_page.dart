@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/user_profile.dart';
 import '../providers/profile_state_manager.dart';
 import '../services/follow_service.dart';
+import '../services/block_service.dart';
 import '../utils/theme_config.dart';
 
 /// 팔로잉 목록 화면 (인스타그램 스타일)
@@ -21,18 +22,36 @@ class FollowingPage extends StatefulWidget {
 class _FollowingPageState extends State<FollowingPage> {
   late Future<List<UserProfile>> _followingFuture;
   final FollowService _followService = FollowService();
+  final BlockService _blockService = BlockService();
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
+    _initializeAndLoad();
+  }
+
+  /// BlockService 초기화 후 팔로잉 목록 로드
+  Future<void> _initializeAndLoad() async {
+    await _blockService.initialize();
     _loadFollowing();
   }
 
   Future<void> _loadFollowing() async {
-    setState(() {
-      _followingFuture = _followService.getFollowing(widget.userId);
-    });
+    // BlockService 초기화 확인
+    await _blockService.initialize();
+    
+    // 팔로잉 목록 가져오기
+    final followingList = await _followService.getFollowing(widget.userId);
+    
+    // 차단된 사용자 필터링
+    final filteredList = _blockService.filterBlockedUsers(followingList);
+    
+    if (mounted) {
+      setState(() {
+        _followingFuture = Future.value(filteredList);
+      });
+    }
   }
 
   Future<void> _toggleFollow(UserProfile user) async {
