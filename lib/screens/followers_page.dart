@@ -21,7 +21,7 @@ class FollowersPage extends StatefulWidget {
 }
 
 class _FollowersPageState extends State<FollowersPage> {
-  late Future<List<UserProfile>> _followersFuture;
+  Future<List<UserProfile>>? _followersFuture;
   final FollowService _followService = FollowService();
   final BlockService _blockService = BlockService();
   bool _isLoading = false;
@@ -196,7 +196,7 @@ class _FollowersPageState extends State<FollowersPage> {
       color: AppColors.textDark,
       backgroundColor: Colors.grey[100],
       child: FutureBuilder<List<UserProfile>>(
-        future: _followersFuture,
+        future: _followersFuture ?? Future.value([]),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(

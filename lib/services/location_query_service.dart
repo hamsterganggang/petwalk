@@ -54,17 +54,17 @@ class LocationQueryService {
     }
   }
 
-  /// 주변 산책러 탐색 스트림
+  /// 주변 사용자 탐색 스트림
   /// 
   /// [currentPosition] 현재 위치
-  /// 반환: 주변 산책러 목록 스트림
+  /// 반환: 주변 사용자 목록 스트림 (1KM 반경 내, 위치 정보가 있는 모든 사용자)
   Stream<List<UserLocationModel>> findNearbyWalkers(Position currentPosition) {
     final controller = StreamController<List<UserLocationModel>>();
     
-    // Firestore에서 산책 중인 사용자 스트림 구독 (profiles 컬렉션에서 조회)
+    // Firestore에서 위치 정보가 있는 모든 사용자 스트림 구독 (profiles 컬렉션에서 조회)
+    // isWalking 필터 제거 - 위치가 있는 모든 사용자 조회
     _walkersSubscription = _firestore
         .collection('profiles')
-        .where('isWalking', isEqualTo: true)
         .snapshots()
         .listen((snapshot) {
       try {
@@ -73,6 +73,10 @@ class LocationQueryService {
         for (var doc in snapshot.docs) {
           // 현재 사용자는 제외
           if (doc.id == _auth.currentUser?.uid) continue;
+          
+          // location 필드가 있는지 확인
+          final data = doc.data();
+          if (data['location'] == null) continue;  // location이 없으면 건너뛰기
           
           try {
             final userLocation = UserLocationModel.fromFirestore(
@@ -86,7 +90,7 @@ class LocationQueryService {
               nearbyWalkers.add(userLocation);
             }
           } catch (e) {
-            // 위치 데이터가 없는 경우 무시
+            // 위치 데이터 파싱 오류 무시
             print('사용자 위치 파싱 오류: ${doc.id} - $e');
           }
         }

@@ -276,7 +276,7 @@ class _NearbyUsersMapState extends State<NearbyUsersMap> {
                       ),
                     ),
                   ),
-                  // 주변 사용자 마커 (초록색)
+                  // 주변 사용자 마커 (프로필 이미지 또는 아이콘)
                   ..._nearbyWalkers.map((walker) {
                     return Marker(
                       point: LatLng(walker.latitude, walker.longitude),
@@ -288,15 +288,48 @@ class _NearbyUsersMapState extends State<NearbyUsersMap> {
                         },
                         child: Container(
                           decoration: BoxDecoration(
-                            color: AppColors.primaryGreen,
+                            color: walker.profileImageUrl != null
+                                ? Colors.transparent
+                                : AppColors.primaryGreen,
                             shape: BoxShape.circle,
                             border: Border.all(color: Colors.white, width: 3),
                           ),
-                          child: const Icon(
-                            Icons.pets,
-                            color: Colors.white,
-                            size: 30,
-                          ),
+                          child: walker.profileImageUrl != null
+                              ? ClipOval(
+                                  child: Image.network(
+                                    walker.profileImageUrl!,
+                                    width: 44,
+                                    height: 44,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        color: AppColors.primaryGreen,
+                                        child: const Icon(
+                                          Icons.pets,
+                                          color: Colors.white,
+                                          size: 30,
+                                        ),
+                                      );
+                                    },
+                                    loadingBuilder: (context, child, loadingProgress) {
+                                      if (loadingProgress == null) return child;
+                                      return Container(
+                                        color: AppColors.primaryGreen,
+                                        child: const Center(
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.pets,
+                                  color: Colors.white,
+                                  size: 30,
+                                ),
                         ),
                       ),
                     );

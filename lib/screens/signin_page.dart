@@ -162,6 +162,13 @@ class _SignInPageState extends State<SignInPage> {
             _isSettingNickname = false;
             _isLoading = false;
           });
+          // 다이얼로그 닫기
+          Navigator.of(context).pop();
+          // 닉네임 설정 완료 후 홈 화면으로 이동
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HomePage()),
+            (route) => false,
+          );
         }
       },
     );
