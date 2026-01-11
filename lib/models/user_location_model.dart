@@ -48,7 +48,7 @@ class UserLocationModel {
     return UserLocationModel(
       userId: doc.id,
       nickname: data['nickname'] as String?,
-      profileImageUrl: data['photoURL'] as String?,
+      profileImageUrl: (data['photoURL'] as String?) ?? (data['photoUrl'] as String?),
       latitude: location.latitude,
       longitude: location.longitude,
       lastActiveAt: lastActiveAt,

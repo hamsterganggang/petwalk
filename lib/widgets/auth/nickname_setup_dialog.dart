@@ -59,17 +59,17 @@ class _NicknameSetupDialogState extends State<NicknameSetupDialog> {
       // 닉네임 저장
       await widget.authService.updateUserNickname(nickname);
       
-      // 다이얼로그 닫기
-      if (!_dialogClosed && mounted) {
-        _dialogClosed = true;
-        Navigator.of(context).pop();
-      }
-      
-      // 콜백 실행 또는 홈으로 이동
+      // 콜백 실행 또는 홈으로 이동 (다이얼로그 닫기 전에 실행)
       if (mounted) {
         if (widget.onComplete != null) {
+          // onComplete 콜백 실행 (이 콜백에서 다이얼로그를 닫고 홈으로 이동)
           widget.onComplete!();
         } else {
+          // onComplete가 없으면 다이얼로그를 닫고 홈으로 이동
+          if (!_dialogClosed) {
+            _dialogClosed = true;
+            Navigator.of(context).pop();
+          }
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (_) => const HomePage()),
             (route) => false,
