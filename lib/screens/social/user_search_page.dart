@@ -1,13 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/user_profile.dart';
-import '../../models/user_model.dart';
 import '../../providers/profile_state_manager.dart';
 import '../../services/follow_service.dart';
-import '../../services/block_service.dart';
-import '../../widgets/user_profile_card.dart';
 import '../../utils/theme_config.dart';
 
 class UserSearchPage extends StatefulWidget {
@@ -20,7 +16,6 @@ class UserSearchPage extends StatefulWidget {
 class _UserSearchPageState extends State<UserSearchPage> {
   final TextEditingController _searchController = TextEditingController();
   final FollowService _followService = FollowService();
-  final BlockService _blockService = BlockService();
   List<UserProfile> _searchResults = [];
   bool _isLoading = false;
   bool _hasSearched = false;
@@ -29,12 +24,6 @@ class _UserSearchPageState extends State<UserSearchPage> {
   @override
   void initState() {
     super.initState();
-    _initializeServices();
-  }
-
-  /// 서비스 초기화
-  Future<void> _initializeServices() async {
-    await _blockService.initialize();
   }
 
   @override
@@ -53,16 +42,6 @@ class _UserSearchPageState extends State<UserSearchPage> {
 
   Future<void> _searchUsers(String query) async {
     if (!mounted) return;
-    
-    final trimmedQuery = query.trim();
-    if (trimmedQuery.isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _hasSearched = false;
-        _isLoading = false;
-      });
-      return;
-    }
 
     setState(() {
       _isLoading = true;
@@ -70,64 +49,39 @@ class _UserSearchPageState extends State<UserSearchPage> {
     });
 
     try {
-      // BlockService 초기화 확인
-      await _blockService.initialize();
+      final profileManager = Provider.of<ProfileStateManager>(context, listen: false);
+      final currentUserId = profileManager.profile?.uid;
       
-      // 현재 사용자 ID 가져오기 (ProfileStateManager 또는 Firebase Auth에서)
-      String? currentUserId;
-      try {
-        final profileManager = Provider.of<ProfileStateManager>(context, listen: false);
-        currentUserId = profileManager.profile?.uid;
-      } catch (e) {
-        print('ProfileStateManager에서 사용자 ID 가져오기 오류: $e');
-      }
-      
-      // 프로필이 없으면 Firebase Auth에서 직접 가져오기
       if (currentUserId == null) {
-        try {
-          currentUserId = FirebaseAuth.instance.currentUser?.uid;
-        } catch (e) {
-          print('Firebase Auth에서 사용자 ID 가져오기 오류: $e');
-        }
-      }
-
-      final searchDocs = await _followService.searchUsers(trimmedQuery);
-      
-      // 중복 제거를 위한 Set 사용
-      final seenUids = <String>{};
-      List<UserProfile> users = [];
-      
-      for (final doc in searchDocs) {
-        final user = UserProfile.fromFirestore(doc);
-        
-        // 중복 체크: 같은 uid가 이미 추가되었는지 확인
-        if (seenUids.contains(user.uid)) {
-          continue; // 이미 추가된 사용자는 건너뛰기
-        }
-        seenUids.add(user.uid);
-        
-        // 자신은 검색 결과에서 제외
-        if (currentUserId == null || user.uid != currentUserId) {
-          // 차단된 사용자도 제외
-          if (!_blockService.isBlocked(user.uid)) {
-            users.add(user);
-          }
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _searchResults = users;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
         setState(() {
           _searchResults = [];
           _isLoading = false;
         });
-        
+        return;
+      }
+
+      final searchDocs = await _followService.searchUsers(query);
+      
+      List<UserProfile> users = [];
+      for (final doc in searchDocs) {
+        final user = UserProfile.fromFirestore(doc);
+        // 자신은 검색 결과에서 제외
+        if (user.uid != currentUserId) {
+          users.add(user);
+        }
+      }
+
+      setState(() {
+        _searchResults = users;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _searchResults = [];
+        _isLoading = false;
+      });
+      
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('검색 중 오류가 발생했습니다: $e'),
@@ -138,22 +92,32 @@ class _UserSearchPageState extends State<UserSearchPage> {
     }
   }
 
-  /// UserProfile을 UserModel로 변환
-  UserModel _convertToUserModel(UserProfile profile) {
-    return UserModel(
-      uid: profile.uid,
-      nickname: profile.nickname,
-      profileImageUrl: profile.photoUrl,
-      followerCount: profile.followers,
-      followingCount: profile.following,
-    );
-  }
-
-  /// 차단된 사용자 필터링 및 검색 결과에서 제거
-  void _onUserBlocked(String userId) {
-    setState(() {
-      _searchResults.removeWhere((user) => user.uid == userId);
-    });
+  Future<void> _toggleFollow(UserProfile user) async {
+    final profileManager = Provider.of<ProfileStateManager>(context, listen: false);
+    
+    try {
+      bool isFollowingUser = await profileManager.isFollowing(user.uid);
+      
+      if (isFollowingUser) {
+        await profileManager.unfollowUser(user.uid);
+      } else {
+        await profileManager.followUser(user.uid);
+      }
+      
+      // 검색 결과 새로고침
+      if (_searchController.text.isNotEmpty) {
+        await _searchUsers(_searchController.text);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('오류가 발생했습니다: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -161,6 +125,8 @@ class _UserSearchPageState extends State<UserSearchPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('사용자 검색'),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
@@ -251,11 +217,34 @@ class _UserSearchPageState extends State<UserSearchPage> {
     return ListView.builder(
       itemCount: _searchResults.length,
       itemBuilder: (context, index) {
-        final userProfile = _searchResults[index];
-        final userModel = _convertToUserModel(userProfile);
-        return UserProfileCard(
-          user: userModel,
-          onBlocked: () => _onUserBlocked(userProfile.uid),
+        final user = _searchResults[index];
+        return ListTile(
+          leading: CircleAvatar(
+            backgroundColor: AppColors.divider,
+            backgroundImage: user.photoUrl != null
+                ? NetworkImage(user.photoUrl!)
+                : null,
+            child: user.photoUrl == null
+                ? const Icon(Icons.person, color: AppColors.textSecondary)
+                : null,
+          ),
+          title: Text(user.nickname),
+          subtitle: user.email.isNotEmpty ? Text(user.email) : null,
+          trailing: FutureBuilder<bool>(
+            future: Provider.of<ProfileStateManager>(context, listen: false)
+                .isFollowing(user.uid),
+            builder: (context, snapshot) {
+              final isFollowingUser = snapshot.data ?? false;
+              return ElevatedButton(
+                onPressed: _isLoading ? null : () => _toggleFollow(user),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isFollowingUser ? AppColors.error : AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text(isFollowingUser ? '언팔로우' : '팔로우'),
+              );
+            },
+          ),
         );
       },
     );

@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
 import '../../services/location_query_service.dart';
 import '../../services/block_service.dart';
 import '../../models/user_location_model.dart';
 import '../../utils/location_permission_helper.dart';
 import '../../utils/theme_config.dart';
+import '../../providers/profile_state_manager.dart';
 
 /// 주변 산책러 지도 화면
 class NearbyUsersMap extends StatefulWidget {
@@ -73,8 +75,8 @@ class _NearbyUsersMapState extends State<NearbyUsersMap> {
           _currentPosition = position;
           _isLoading = false;
         });
-        _mapController.move(_currentLocation, 15.0);
-        _startTracking();
+        // MapController는 onMapReady 콜백에서만 사용
+        // onMapReady에서 지도 이동 및 추적 시작이 처리됨
       }
     } catch (e) {
       if (mounted) {
@@ -242,7 +244,9 @@ class _NearbyUsersMapState extends State<NearbyUsersMap> {
               initialCenter: _currentLocation,
               initialZoom: 15.0,
               onMapReady: () {
-                if (_currentPosition != null) {
+                // 지도가 준비되면 현재 위치로 이동하고 추적 시작
+                if (_currentPosition != null && mounted) {
+                  _mapController.move(_currentLocation, 15.0);
                   _startTracking();
                 }
               },
@@ -373,58 +377,175 @@ class _NearbyUsersMapState extends State<NearbyUsersMap> {
 
   /// 사용자 정보 표시
   void _showUserInfo(UserLocationModel walker) {
+    final profileManager = Provider.of<ProfileStateManager>(context, listen: false);
+
     showModalBottomSheet(
       context: context,
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircleAvatar(
-                radius: 40,
-                backgroundImage: walker.profileImageUrl != null
-                    ? NetworkImage(walker.profileImageUrl!)
-                    : null,
-                child: walker.profileImageUrl == null
-                    ? const Icon(Icons.person, size: 40)
-                    : null,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                walker.nickname ?? '이름 없음',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.location_on, size: 16, color: AppColors.primaryGreen),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${_formatDistance(walker.distanceInMeters)} 떨어져 있음',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textGrey,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          bool isLoading = false;
+
+          return Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 프로필 이미지
+                CircleAvatar(
+                  radius: 40,
+                  backgroundImage: walker.profileImageUrl != null
+                      ? NetworkImage(walker.profileImageUrl!)
+                      : null,
+                  child: walker.profileImageUrl == null
+                      ? const Icon(Icons.person, size: 40)
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                // 닉네임
+                Text(
+                  walker.nickname ?? '이름 없음',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                // 거리 정보
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.location_on, size: 16, color: AppColors.primaryGreen),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_formatDistance(walker.distanceInMeters)} 떨어져 있음',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppColors.textGrey,
+                          ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                // 팔로우/언팔로우 버튼
+                FutureBuilder<bool>(
+                  future: profileManager.isFollowing(walker.userId),
+                  builder: (context, snapshot) {
+                    final isFollowingUser = snapshot.data ?? false;
+                    
+                    return SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: isLoading
+                            ? null
+                            : () async {
+                                setState(() {
+                                  isLoading = true;
+                                });
+
+                                try {
+                                  bool success;
+                                  if (isFollowingUser) {
+                                    success = await profileManager.unfollowUser(walker.userId);
+                                  } else {
+                                    success = await profileManager.followUser(walker.userId);
+                                  }
+
+                                  if (mounted && context.mounted) {
+                                    setState(() {
+                                      isLoading = false;
+                                    });
+
+                                    if (success) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            isFollowingUser
+                                                ? '언팔로우했습니다'
+                                                : '팔로우했습니다',
+                                          ),
+                                          backgroundColor: AppColors.primaryGreen,
+                                          duration: const Duration(seconds: 2),
+                                        ),
+                                      );
+                                      // 상태 새로고침을 위해 다이얼로그 닫고 다시 열기
+                                      Navigator.pop(context);
+                                      _showUserInfo(walker);
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            profileManager.errorMessage ??
+                                                '오류가 발생했습니다',
+                                          ),
+                                          backgroundColor: Colors.red,
+                                          duration: const Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                } catch (e) {
+                                  if (mounted && context.mounted) {
+                                    setState(() {
+                                      isLoading = false;
+                                    });
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('오류가 발생했습니다: $e'),
+                                        backgroundColor: Colors.red,
+                                        duration: const Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isFollowingUser
+                              ? Colors.grey
+                              : AppColors.primaryGreen,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
+                        child: isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor:
+                                      AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : Text(
+                                isFollowingUser ? '언팔로우' : '팔로우',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                // 위치 보기 버튼
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      // 지도에서 해당 위치로 이동
+                      _mapController.move(
+                        LatLng(walker.latitude, walker.longitude),
+                        16.0,
+                      );
+                      Navigator.pop(context);
+                    },
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: const Text('위치 보기'),
                   ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () {
-                  // 지도에서 해당 위치로 이동
-                  _mapController.move(
-                    LatLng(walker.latitude, walker.longitude),
-                    16.0,
-                  );
-                  Navigator.pop(context);
-                },
-                child: const Text('위치 보기'),
-              ),
-            ],
-          ),
-        );
-      },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }
