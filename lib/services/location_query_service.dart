@@ -27,11 +27,12 @@ class LocationQueryService {
     if (user == null) return;
 
     try {
-      await _firestore.collection('users').doc(user.uid).update({
+      // profiles 컬렉션에 위치 정보 저장 (문서가 없으면 생성, 있으면 업데이트)
+      await _firestore.collection('profiles').doc(user.uid).set({
         'location': GeoPoint(position.latitude, position.longitude),
         'isWalking': isWalking,
         'lastActiveAt': FieldValue.serverTimestamp(),
-      });
+      }, SetOptions(merge: true));
     } catch (e) {
       print('위치 업데이트 오류: $e');
     }
@@ -43,10 +44,11 @@ class LocationQueryService {
     if (user == null) return;
 
     try {
-      await _firestore.collection('users').doc(user.uid).update({
+      // profiles 컬렉션에 isWalking 상태 업데이트
+      await _firestore.collection('profiles').doc(user.uid).set({
         'isWalking': false,
         'lastActiveAt': FieldValue.serverTimestamp(),
-      });
+      }, SetOptions(merge: true));
     } catch (e) {
       print('산책 종료 처리 오류: $e');
     }
@@ -59,9 +61,9 @@ class LocationQueryService {
   Stream<List<UserLocationModel>> findNearbyWalkers(Position currentPosition) {
     final controller = StreamController<List<UserLocationModel>>();
     
-    // Firestore에서 산책 중인 사용자 스트림 구독
+    // Firestore에서 산책 중인 사용자 스트림 구독 (profiles 컬렉션에서 조회)
     _walkersSubscription = _firestore
-        .collection('users')
+        .collection('profiles')
         .where('isWalking', isEqualTo: true)
         .snapshots()
         .listen((snapshot) {
