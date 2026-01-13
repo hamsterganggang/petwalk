@@ -7,11 +7,11 @@ import '../../services/walk_record_service.dart';
 import '../../utils/theme_config.dart';
 import '../../screens/walk_detail_view.dart';
 
-/// 피드 아이템 위젯 (삭제 및 비공개 기능 추가)
+/// 피드 아이템 위젯 (메모 수정 기능 추가)
 class FeedItemWidget extends StatefulWidget {
   final FeedItem item;
   final VoidCallback? onLikeChanged;
-  final VoidCallback? onContentChanged; // 삭제나 상태 변경 시 호출될 콜백
+  final VoidCallback? onContentChanged;
 
   const FeedItemWidget({
     super.key,
@@ -30,6 +30,7 @@ class _FeedItemWidgetState extends State<FeedItemWidget>
   late int _likeCount;
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
+  late String _memo; // 메모 상태 관리를 위해 추가
   
   final LikeService _likeService = LikeService();
   final ShareService _shareService = ShareService();
@@ -41,6 +42,7 @@ class _FeedItemWidgetState extends State<FeedItemWidget>
     super.initState();
     _isLiked = widget.item.isLiked;
     _likeCount = widget.item.likeCount;
+    _memo = widget.item.memo ?? '';
 
     _animationController = AnimationController(
       vsync: this,
@@ -57,10 +59,8 @@ class _FeedItemWidgetState extends State<FeedItemWidget>
     super.dispose();
   }
 
-  /// 더보기 메뉴 (삭제/비공개)
+  /// 더보기 메뉴 (수정/삭제/비공개)
   void _showMoreMenu() {
-    // 실제 isPublic 상태는 walkData에 담겨있거나 item에 있어야 함
-    // FeedItem 모델에 isPublic이 없으므로 일단 true 가정하고 service를 통해 처리
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -68,6 +68,15 @@ class _FeedItemWidgetState extends State<FeedItemWidget>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // 메모 수정 항목 추가
+            ListTile(
+              leading: const Icon(Icons.edit_note),
+              title: const Text('메모 수정하기'),
+              onTap: () {
+                Navigator.pop(context);
+                _showEditMemoDialog();
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.lock_outline),
               title: const Text('비공개로 전환'),
@@ -88,6 +97,48 @@ class _FeedItemWidgetState extends State<FeedItemWidget>
         ),
       ),
     );
+  }
+
+  /// 메모 수정 다이얼로그
+  void _showEditMemoDialog() {
+    final controller = TextEditingController(text: _memo);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('메모 수정', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: '산책에 대한 메모를 남겨주세요.',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          TextButton(
+            onPressed: () async {
+              final newMemo = controller.text.trim();
+              Navigator.pop(context);
+              await _updateMemo(newMemo);
+            },
+            child: const Text('저장', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryGreen)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _updateMemo(String newMemo) async {
+    try {
+      await _walkService.updateMemo(widget.item.walkId, newMemo);
+      if (mounted) {
+        setState(() => _memo = newMemo);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('메모가 수정되었습니다.')));
+      }
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('메모 수정 중 오류가 발생했습니다.')));
+    }
   }
 
   Future<void> _updateVisibility(bool isPublic) async {
@@ -200,7 +251,6 @@ class _FeedItemWidgetState extends State<FeedItemWidget>
                       ],
                     ),
                   ),
-                  // 내 게시물일 때만 더보기 버튼 표시
                   if (isMine)
                     IconButton(
                       icon: const Icon(Icons.more_vert, size: 20),
@@ -243,9 +293,9 @@ class _FeedItemWidgetState extends State<FeedItemWidget>
                       Text(widget.item.mood, style: const TextStyle(fontSize: 18)),
                     ],
                   ),
-                  if (widget.item.memo != null && widget.item.memo!.isNotEmpty) ...[
+                  if (_memo.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Text(widget.item.memo!, style: theme.textTheme.bodyMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
+                    Text(_memo, style: theme.textTheme.bodyMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
                   ],
                 ],
               ),

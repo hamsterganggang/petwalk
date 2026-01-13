@@ -32,12 +32,14 @@ class _WalkDetailViewState extends State<WalkDetailView> {
   int _likeCount = 0;
   bool _isLikeLoading = true;
   late bool _isPublic;
+  late String _memo;
 
   @override
   void initState() {
     super.initState();
     _likeCount = widget.walkData['likeCount'] ?? 0;
     _isPublic = widget.walkData['isPublic'] ?? true;
+    _memo = widget.walkData['memo'] as String? ?? '';
     _checkInitialLikeStatus();
   }
 
@@ -64,7 +66,7 @@ class _WalkDetailViewState extends State<WalkDetailView> {
     }
   }
 
-  /// 더보기 메뉴 표시 (삭제/비공개 전환)
+  /// 더보기 메뉴 표시
   void _showMoreMenu() {
     showModalBottomSheet(
       context: context,
@@ -73,6 +75,14 @@ class _WalkDetailViewState extends State<WalkDetailView> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.edit_note),
+              title: const Text('메모 수정하기'),
+              onTap: () {
+                Navigator.pop(context);
+                _showEditMemoDialog();
+              },
+            ),
             ListTile(
               leading: Icon(_isPublic ? Icons.lock_outline : Icons.public),
               title: Text(_isPublic ? '비공개로 전환' : '공개로 전환'),
@@ -93,6 +103,48 @@ class _WalkDetailViewState extends State<WalkDetailView> {
         ),
       ),
     );
+  }
+
+  /// 메모 수정 다이얼로그
+  void _showEditMemoDialog() {
+    final controller = TextEditingController(text: _memo);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('메모 수정'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: '산책에 대한 메모를 남겨주세요.',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          TextButton(
+            onPressed: () async {
+              final newMemo = controller.text.trim();
+              Navigator.pop(context);
+              await _updateMemo(newMemo);
+            },
+            child: const Text('저장', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _updateMemo(String newMemo) async {
+    try {
+      await _walkService.updateMemo(widget.docId, newMemo);
+      if (mounted) {
+        setState(() => _memo = newMemo);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('메모가 수정되었습니다.')));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('메모 수정 중 오류가 발생했습니다.')));
+    }
   }
 
   Future<void> _toggleVisibility() async {
@@ -120,7 +172,7 @@ class _WalkDetailViewState extends State<WalkDetailView> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context); // 다이얼로그 닫기
+              Navigator.pop(context);
               await _deleteRecord();
             },
             child: const Text('삭제', style: TextStyle(color: AppColors.error)),
@@ -134,7 +186,7 @@ class _WalkDetailViewState extends State<WalkDetailView> {
     try {
       await _walkService.deleteWalkRecord(widget.docId);
       if (mounted) {
-        Navigator.pop(context); // 상세 페이지 닫고 목록으로 이동
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('기록이 삭제되었습니다.')));
       }
     } catch (e) {
@@ -147,7 +199,6 @@ class _WalkDetailViewState extends State<WalkDetailView> {
     final startTime = (widget.walkData['startTime'] as Timestamp).toDate();
     final endTime = (widget.walkData['endTime'] as Timestamp).toDate();
     final distance = (widget.walkData['totalDistance'] as num).toDouble();
-    final memo = widget.walkData['memo'] as String? ?? '';
     final mood = widget.walkData['mood'] as String? ?? '😊';
     final routeData = widget.walkData['route'] as List<dynamic>? ?? [];
     final petNames = widget.walkData['petNames'] as List<dynamic>? ?? [];
@@ -163,7 +214,7 @@ class _WalkDetailViewState extends State<WalkDetailView> {
         title: const Text('산책 상세 정보'),
         actions: [
           IconButton(icon: const Icon(Icons.fullscreen), onPressed: () => _navigateToFullScreenMap(context, points)),
-          if (isMine) // 내 게시물일 때만 더보기 버튼 표시
+          if (isMine)
             IconButton(icon: const Icon(Icons.more_vert), onPressed: _showMoreMenu),
         ],
       ),
@@ -193,7 +244,7 @@ class _WalkDetailViewState extends State<WalkDetailView> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(12)),
-                    child: Text(memo.isNotEmpty ? memo : '기록된 메모가 없습니다.', style: const TextStyle(fontSize: 15)),
+                    child: Text(_memo.isNotEmpty ? _memo : '기록된 메모가 없습니다.', style: const TextStyle(fontSize: 15)),
                   ),
                 ],
               ),

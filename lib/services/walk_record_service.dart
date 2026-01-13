@@ -16,7 +16,7 @@ class WalkRecordService {
     required String mood,
     List<String> selectedPetNames = const [],
     List<String> imageUrls = const [],
-    bool isPublic = true, // 공개 여부 기본값 추가
+    bool isPublic = true,
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not logged in');
@@ -30,7 +30,7 @@ class WalkRecordService {
       'mood': mood,
       'petNames': selectedPetNames,
       'imageUrls': imageUrls,
-      'isPublic': isPublic, // 필드 추가
+      'isPublic': isPublic,
       'route': routeCoordinates.map((point) => {
         'lat': point.latitude,
         'lng': point.longitude,
@@ -76,6 +76,19 @@ class WalkRecordService {
       });
     } catch (e) {
       print('Error updating visibility: $e');
+      rethrow;
+    }
+  }
+
+  /// 메모 수정
+  Future<void> updateMemo(String docId, String newMemo) async {
+    try {
+      await _firestore.collection('walks').doc(docId).update({
+        'memo': newMemo,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error updating memo: $e');
       rethrow;
     }
   }
