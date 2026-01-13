@@ -85,6 +85,7 @@ class UserAuthenticationService {
       );
 
       if (userCredential.user != null) {
+        // 서버 정보 확인 및 복구 시도
         await _saveUserToFirestore(userCredential.user!);
         await NotificationService.updateToken();
       }
@@ -139,7 +140,7 @@ class UserAuthenticationService {
     }
   }
 
-  /// 사용자의 닉네임이 설정되어 있는지 확인 (에러 해결용)
+  /// 사용자의 닉네임이 설정되어 있는지 확인
   Future<bool> hasNickname() async {
     try {
       final user = currentUser;
@@ -157,14 +158,28 @@ class UserAuthenticationService {
     }
   }
 
-  /// 인증 상태 확인 (에러 해결용)
+  /// 인증 상태 및 서버 정보 교차 확인 (서버에서 정보 삭제 시 로그아웃 처리)
   Future<bool> checkAuthStatus() async {
     try {
-      await _auth.authStateChanges().first;
-      return isAuthenticated;
+      // 1. Firebase Auth 세션 확인
+      final user = _auth.currentUser;
+      if (user == null) return false;
+
+      // 2. Firestore 서버 데이터 존재 확인
+      final docSnapshot = await _firestore.collection('profiles').doc(user.uid).get();
+      
+      if (!docSnapshot.exists) {
+        // 인증은 되어있으나 서버에 정보가 없는 경우 (강제 로그아웃)
+        print('User found in Auth but not in Firestore. Signing out...');
+        await logoutUser();
+        return false;
+      }
+
+      return true;
     } catch (e) {
       print('Error checking auth status: $e');
-      return false;
+      // 네트워크 오류 등의 경우 기존 인증 상태 유지 (안전책)
+      return isAuthenticated;
     }
   }
 
