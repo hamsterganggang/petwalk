@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import '../providers/user_auth_state.dart';
 import '../utils/theme_config.dart';
-import 'signin_page.dart';
+import 'landing_page.dart';
 import 'home_page.dart';
 
-/// 스플래시/로딩 화면 (새로운 애니메이션 적용)
+/// 스플래시/로딩 화면
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
 
@@ -47,7 +47,7 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
 
   /// 인증 상태 확인 후 화면 이동
   Future<void> _checkAuthAndNavigate() async {
-    // 최소 2.5초 동안 로딩 화면을 보여줌 (애니메이션 감상용)
+    // 최소 2.5초 동안 로딩 화면을 보여줌
     final startTime = DateTime.now();
     
     // 인증 상태 확인
@@ -69,8 +69,9 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
         MaterialPageRoute(builder: (_) => const HomePage()),
       );
     } else {
+      // 로그인되어 있지 않으면 LandingPage(소개 화면)로 이동
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const SignInPage()),
+        MaterialPageRoute(builder: (_) => const LandingPage()),
       );
     }
   }
@@ -93,29 +94,18 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
         ),
         child: Stack(
           children: [
-            // 배경 장식 (발자국 패턴)
             Positioned(
               top: 100,
               left: -20,
               child: Opacity(
                 opacity: 0.1,
-                child: Icon(Icons.pets, size: 150, color: Colors.white),
+                child: const Icon(Icons.pets, size: 150, color: Colors.white),
               ),
             ),
-            Positioned(
-              bottom: 150,
-              right: -30,
-              child: Opacity(
-                opacity: 0.1,
-                child: Icon(Icons.pets, size: 200, color: Colors.white),
-              ),
-            ),
-            
             Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // 맥동하는 발바닥 로고
                   AnimatedBuilder(
                     animation: _controller,
                     builder: (context, child) {
@@ -140,8 +130,6 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
                     },
                   ),
                   const SizedBox(height: 40),
-                  
-                  // 앱 타이틀
                   const Text(
                     'PetWalk',
                     style: TextStyle(
@@ -150,37 +138,6 @@ class _SplashPageState extends State<SplashPage> with SingleTickerProviderStateM
                       fontWeight: FontWeight.w900,
                       color: Colors.white,
                       letterSpacing: 2,
-                      shadows: [
-                        Shadow(
-                          offset: Offset(0, 4),
-                          blurRadius: 10,
-                          color: Colors.black26,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '함께 걷는 즐거움',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.white.withOpacity(0.8),
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 80),
-                  
-                  // 세련된 로딩 바
-                  SizedBox(
-                    width: 200,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: const LinearProgressIndicator(
-                        backgroundColor: Colors.white24,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        minHeight: 6,
-                      ),
                     ),
                   ),
                 ],
