@@ -16,6 +16,7 @@ class WalkRecordService {
     required String mood,
     List<String> selectedPetNames = const [],
     List<String> imageUrls = const [],
+    bool isPublic = true, // 공개 여부 기본값 추가
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('User not logged in');
@@ -29,6 +30,7 @@ class WalkRecordService {
       'mood': mood,
       'petNames': selectedPetNames,
       'imageUrls': imageUrls,
+      'isPublic': isPublic, // 필드 추가
       'route': routeCoordinates.map((point) => {
         'lat': point.latitude,
         'lng': point.longitude,
@@ -55,7 +57,26 @@ class WalkRecordService {
         .snapshots();
   }
 
+  /// 기록 삭제
   Future<void> deleteWalkRecord(String docId) async {
-    await _firestore.collection('walks').doc(docId).delete();
+    try {
+      await _firestore.collection('walks').doc(docId).delete();
+    } catch (e) {
+      print('Error deleting walk record: $e');
+      rethrow;
+    }
+  }
+
+  /// 공개 여부 상태 변경
+  Future<void> updateVisibility(String docId, bool isPublic) async {
+    try {
+      await _firestore.collection('walks').doc(docId).update({
+        'isPublic': isPublic,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error updating visibility: $e');
+      rethrow;
+    }
   }
 }
