@@ -12,6 +12,8 @@ class FeedItem {
   final String? memo;
   final String mood;
   final List<String> imageUrls;
+  final List<dynamic> route; // 이동 경로 추가
+  final List<dynamic> petNames; // 함께한 반려동물 추가
   final DateTime createdAt;
   final int likeCount;
   final bool isLiked;
@@ -29,6 +31,8 @@ class FeedItem {
     this.memo,
     required this.mood,
     required this.imageUrls,
+    this.route = const [],
+    this.petNames = const [],
     required this.createdAt,
     required this.likeCount,
     required this.isLiked,
@@ -46,6 +50,8 @@ class FeedItem {
     String? memo,
     String? mood,
     List<String>? imageUrls,
+    List<dynamic>? route,
+    List<dynamic>? petNames,
     DateTime? createdAt,
     int? likeCount,
     bool? isLiked,
@@ -61,12 +67,29 @@ class FeedItem {
       memo: memo ?? this.memo,
       mood: mood ?? this.mood,
       imageUrls: imageUrls ?? this.imageUrls,
+      route: route ?? this.route,
+      petNames: petNames ?? this.petNames,
       createdAt: createdAt ?? this.createdAt,
       likeCount: likeCount ?? this.likeCount,
       isLiked: isLiked ?? this.isLiked,
       userNickname: userNickname ?? this.userNickname,
       userProfileImageUrl: userProfileImageUrl ?? this.userProfileImageUrl,
     );
+  }
+
+  /// WalkDetailView에서 사용할 수 있도록 Map으로 변환
+  Map<String, dynamic> toWalkDataMap() {
+    return {
+      'startTime': Timestamp.fromDate(startTime),
+      'endTime': Timestamp.fromDate(endTime),
+      'totalDistance': totalDistance,
+      'memo': memo,
+      'mood': mood,
+      'imageUrls': imageUrls,
+      'route': route,
+      'petNames': petNames,
+      'userId': userId,
+    };
   }
 }
 
@@ -77,9 +100,6 @@ class FeedService {
   static const int _pageSize = 10;
 
   /// 공개 피드 및 사용자 산책 기록 로드 (페이지네이션)
-  /// 
-  /// [lastDocument] 마지막으로 로드한 문서 (null이면 첫 페이지)
-  /// 반환: FeedItem 리스트와 마지막 문서
   Future<({List<FeedItem> items, DocumentSnapshot? lastDoc})> loadPublicFeed({
     DocumentSnapshot? lastDocument,
     required Map<String, bool> likeStatusMap,
@@ -94,7 +114,7 @@ class FeedService {
           .where('isPublic', isEqualTo: true)
           .orderBy('createdAt', descending: true);
 
-      // 현재 사용자의 산책 기록 쿼리 (공개 여부와 관계없이)
+      // 현재 사용자의 산책 기록 쿼리
       Query? userQuery;
       if (userId != null) {
         userQuery = _firestore
@@ -115,36 +135,22 @@ class FeedService {
             .toList();
       }
 
-      // 페이지네이션을 위해 충분한 수의 문서를 가져옴
-      final fetchLimit = _pageSize * 3; // 중복 제거를 위해 더 많이 가져옴
-
-      // 공개 기록과 내 기록 쿼리 실행
+      final fetchLimit = _pageSize * 3;
       QuerySnapshot publicSnapshot;
       QuerySnapshot? userSnapshot;
 
       if (userQuery != null) {
-        final userFuture = userQuery.limit(fetchLimit).get();
         final results = await Future.wait<QuerySnapshot>([
           publicQuery.limit(fetchLimit).get(),
-          userFuture,
+          userQuery.limit(fetchLimit).get(),
         ]);
-        if (results.isNotEmpty) {
-          publicSnapshot = results[0];
-        } else {
-          publicSnapshot = await publicQuery.limit(fetchLimit).get();
-        }
-        if (results.length >= 2) {
-          userSnapshot = results[1];
-        } else {
-          userSnapshot = null;
-        }
+        publicSnapshot = results[0];
+        userSnapshot = results[1];
       } else {
         publicSnapshot = await publicQuery.limit(fetchLimit).get();
         userSnapshot = null;
       }
 
-      // 팔로우한 사람들의 산책 기록 가져오기
-      // whereIn은 최대 10개까지만 지원하므로 배치로 처리
       List<QuerySnapshot> followingSnapshots = [];
       if (followingIds.isNotEmpty) {
         for (var i = 0; i < followingIds.length; i += 10) {
@@ -159,186 +165,98 @@ class FeedService {
         }
       }
 
-      // 모든 문서를 합치고 중복 제거 (walkId 기준)
       final allDocs = <String, QueryDocumentSnapshot>{};
-
-      for (var doc in publicSnapshot.docs) {
-        allDocs[doc.id] = doc;
-      }
-
+      for (var doc in publicSnapshot.docs) allDocs[doc.id] = doc;
       if (userSnapshot != null) {
-        for (var doc in userSnapshot.docs) {
-          allDocs[doc.id] = doc; // 중복이면 덮어쓰기 (같은 문서)
-        }
+        for (var doc in userSnapshot.docs) allDocs[doc.id] = doc;
       }
-
-      // 팔로우한 사람들의 산책 기록 추가
       for (var snapshot in followingSnapshots) {
-        for (var doc in snapshot.docs) {
-          allDocs[doc.id] = doc; // 중복이면 덮어쓰기
-        }
+        for (var doc in snapshot.docs) allDocs[doc.id] = doc;
       }
 
-      // createdAt 또는 startTime 기준으로 정렬
       final sortedDocs = allDocs.values.toList()
         ..sort((a, b) {
           final aData = a.data() as Map<String, dynamic>;
           final bData = b.data() as Map<String, dynamic>;
-
-          // createdAt이 있으면 createdAt 기준, 없으면 startTime 기준
-          Timestamp? aTime = aData['createdAt'] as Timestamp?;
-          Timestamp? bTime = bData['createdAt'] as Timestamp?;
-
-          if (aTime == null) {
-            aTime = aData['startTime'] as Timestamp?;
-          }
-          if (bTime == null) {
-            bTime = bData['startTime'] as Timestamp?;
-          }
-
-          if (aTime == null && bTime == null) return 0;
-          if (aTime == null) return 1;
-          if (bTime == null) return -1;
-          return bTime.compareTo(aTime); // 내림차순
+          Timestamp? aTime = (aData['createdAt'] ?? aData['startTime']) as Timestamp?;
+          Timestamp? bTime = (bData['createdAt'] ?? bData['startTime']) as Timestamp?;
+          if (aTime == null || bTime == null) return 0;
+          return bTime.compareTo(aTime);
         });
 
-      // 페이지네이션 처리
       List<QueryDocumentSnapshot> paginatedDocs;
       if (lastDocument == null) {
-        // 첫 페이지
         paginatedDocs = sortedDocs.take(_pageSize).toList();
       } else {
-        // 마지막 문서 이후의 문서들만 가져오기
-        final lastDocId = lastDocument.id;
-        final lastIndex = sortedDocs.indexWhere((doc) => doc.id == lastDocId);
+        final lastIndex = sortedDocs.indexWhere((doc) => doc.id == lastDocument.id);
         if (lastIndex == -1 || lastIndex >= sortedDocs.length - 1) {
           return (items: const <FeedItem>[], lastDoc: null);
         }
         paginatedDocs = sortedDocs.skip(lastIndex + 1).take(_pageSize).toList();
       }
 
-      if (paginatedDocs.isEmpty) {
-        return (items: const <FeedItem>[], lastDoc: null);
-      }
+      if (paginatedDocs.isEmpty) return (items: const <FeedItem>[], lastDoc: null);
 
-      // 사용자 ID 목록 추출
       final userIds = paginatedDocs
-          .map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        return data['userId'] as String;
-      })
-          .toSet()
-          .toList();
-
-      // 사용자 정보 일괄 조회
+          .map((doc) => (doc.data() as Map<String, dynamic>)['userId'] as String)
+          .toSet().toList();
       final userMap = await _fetchUsers(userIds);
 
-      // FeedItem 리스트 생성
-      final items = <FeedItem>[];
-      for (var doc in paginatedDocs) {
+      final items = paginatedDocs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
         final userId = data['userId'] as String;
         final userInfo = userMap[userId];
-
         final startTime = (data['startTime'] as Timestamp).toDate();
-        final endTime = (data['endTime'] as Timestamp).toDate();
-        // createdAt이 없으면 startTime 사용
-        final createdAt = (data['createdAt'] as Timestamp?)?.toDate() ??
-            startTime;
 
-        items.add(FeedItem(
+        return FeedItem(
           walkId: doc.id,
           userId: userId,
           startTime: startTime,
-          endTime: endTime,
+          endTime: (data['endTime'] as Timestamp).toDate(),
           totalDistance: (data['totalDistance'] as num?)?.toDouble() ?? 0.0,
           memo: data['memo'] as String?,
           mood: data['mood'] as String? ?? '😊',
-          imageUrls: (data['imageUrls'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ?? [],
-          createdAt: createdAt,
+          imageUrls: (data['imageUrls'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+          route: data['route'] as List<dynamic>? ?? [],
+          petNames: data['petNames'] as List<dynamic>? ?? [],
+          createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? startTime,
           likeCount: (data['likeCount'] as int?) ?? 0,
           isLiked: likeStatusMap[doc.id] ?? false,
           userNickname: userInfo?['nickname'] as String?,
-          userProfileImageUrl: (userInfo?['photoURL'] as String?) ??
-              (userInfo?['photoUrl'] as String?) ??
-              (userInfo?['profileImageUrl'] as String?),
-        ));
-      }
+          userProfileImageUrl: (userInfo?['photoURL'] ?? userInfo?['photoUrl'] ?? userInfo?['profileImageUrl']) as String?,
+        );
+      }).toList();
 
-      final DocumentSnapshot? lastDoc = paginatedDocs.isNotEmpty
-          ? paginatedDocs.last
-          : null;
-
-      return (items: items, lastDoc: lastDoc);
+      return (items: items, lastDoc: paginatedDocs.last);
     } catch (e) {
       print('피드 로드 오류: $e');
       rethrow;
     }
   }
 
-  /// 사용자 정보 일괄 조회
-  /// 
-  /// [userIds] 조회할 사용자 ID 목록
-  /// 반환: userId를 키로 하는 사용자 정보 Map
-  Future<Map<String, Map<String, dynamic>>> _fetchUsers(
-      List<String> userIds) async {
-    if (userIds.isEmpty) {
-      return {};
-    }
+  Future<Map<String, Map<String, dynamic>>> _fetchUsers(List<String> userIds) async {
+    if (userIds.isEmpty) return {};
+    final userMap = <String, Map<String, dynamic>>{};
+    final foundIds = <String>{};
 
-    try {
-      // Firestore의 whereIn은 최대 10개까지만 지원
-      final userMap = <String, Map<String, dynamic>>{};
-      final foundIds = <String>{};
+    for (var i = 0; i < userIds.length; i += 10) {
+      final batch = userIds.skip(i).take(10).toList();
+      try {
+        final profilesSnapshot = await _firestore.collection('profiles').where(FieldPath.documentId, whereIn: batch).get();
+        for (var doc in profilesSnapshot.docs) {
+          userMap[doc.id] = doc.data();
+          foundIds.add(doc.id);
+        }
+      } catch (_) {}
 
-      // 10개씩 나누어 조회
-      for (var i = 0; i < userIds.length; i += 10) {
-        final batch = userIds.skip(i).take(10).toList();
-        
-        // 1. profiles 컬렉션에서 먼저 조회 (이메일 가입 사용자는 여기에 저장됨)
+      final notFound = batch.where((id) => !foundIds.contains(id)).toList();
+      if (notFound.isNotEmpty) {
         try {
-          final profilesSnapshot = await _firestore
-              .collection('profiles')
-              .where(FieldPath.documentId, whereIn: batch)
-              .get();
-
-          for (var doc in profilesSnapshot.docs) {
-            final data = doc.data();
-            userMap[doc.id] = data;
-            foundIds.add(doc.id);
-          }
-        } catch (e) {
-          print('profiles 컬렉션 조회 오류: $e');
-        }
-
-        // 2. profiles에서 찾지 못한 경우 users 컬렉션에서 조회 (구글 로그인 사용자 호환성)
-        final notFoundInProfiles = batch.where((id) => !foundIds.contains(id)).toList();
-        if (notFoundInProfiles.isNotEmpty) {
-          try {
-            final usersSnapshot = await _firestore
-                .collection('users')
-                .where(FieldPath.documentId, whereIn: notFoundInProfiles)
-                .get();
-
-            for (var doc in usersSnapshot.docs) {
-              if (!userMap.containsKey(doc.id)) {
-                final data = doc.data();
-                userMap[doc.id] = data;
-                foundIds.add(doc.id);
-              }
-            }
-          } catch (e) {
-            print('users 컬렉션 조회 오류: $e');
-          }
-        }
+          final usersSnapshot = await _firestore.collection('users').where(FieldPath.documentId, whereIn: notFound).get();
+          for (var doc in usersSnapshot.docs) userMap[doc.id] = doc.data();
+        } catch (_) {}
       }
-
-      return userMap;
-    } catch (e) {
-      print('사용자 정보 조회 오류: $e');
-      return {};
     }
+    return userMap;
   }
 }
