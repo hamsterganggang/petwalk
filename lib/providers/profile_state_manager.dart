@@ -49,6 +49,7 @@ class ProfileStateManager extends ChangeNotifier {
             bio: '',
             locationEnabled: false,
             notificationsEnabled: true,
+            isPrivate: false,
             followers: 0,
             following: 0,
           );
@@ -68,7 +69,6 @@ class ProfileStateManager extends ChangeNotifier {
     }
   }
 
-  // 알림 설정 업데이트 함수 추가
   Future<bool> updateNotificationsEnabled(bool enabled) async {
     final user = _auth.currentUser;
     if (user == null) return false;
@@ -77,16 +77,36 @@ class ProfileStateManager extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. NotificationService를 통해 FCM 토큰 제어 및 Firestore 업데이트
       await NotificationService.updateNotificationSetting(enabled);
-      
-      // 2. 로컬 상태 업데이트
       if (_profile != null) {
         _profile = _profile!.copyWith(notificationsEnabled: enabled);
       }
       return true;
     } catch (e) {
       _errorMessage = '알림 설정 업데이트 오류: $e';
+      return false;
+    } finally {
+      _isUpdating = false;
+      notifyListeners();
+    }
+  }
+
+  /// 프로필 비공개 설정 업데이트
+  Future<bool> updateIsPrivate(bool isPrivate) async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+
+    _isUpdating = true;
+    notifyListeners();
+
+    try {
+      await _profileService.updateProfile(uid: user.uid, isPrivate: isPrivate);
+      if (_profile != null) {
+        _profile = _profile!.copyWith(isPrivate: isPrivate);
+      }
+      return true;
+    } catch (e) {
+      _errorMessage = '비공개 설정 업데이트 오류: $e';
       return false;
     } finally {
       _isUpdating = false;
@@ -224,6 +244,7 @@ class ProfileStateManager extends ChangeNotifier {
     String? bio,
     String? photoUrl,
     bool? locationEnabled,
+    bool? isPrivate,
   }) async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -243,6 +264,7 @@ class ProfileStateManager extends ChangeNotifier {
         bio: bio,
         photoUrl: photoUrl,
         locationEnabled: locationEnabled,
+        isPrivate: isPrivate,
       );
       await loadProfileData();
       return true;

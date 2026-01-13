@@ -12,6 +12,7 @@ class LocationQueryService {
   
   StreamSubscription<Position>? _positionSubscription;
   StreamSubscription<QuerySnapshot>? _walkersSubscription;
+  StreamSubscription<QuerySnapshot>? _friendsSubscription;
   Timer? _locationUpdateTimer;
   
   static const double _searchRadiusInMeters = 1000.0; // 1km
@@ -19,15 +20,11 @@ class LocationQueryService {
   static const int _minDistanceForUpdate = 10; // 10m 이동 시 업데이트
 
   /// 내 위치를 Firestore에 업데이트
-  /// 
-  /// [position] 현재 위치
-  /// [isWalking] 산책 중 여부
   Future<void> updateUserLocation(Position position, bool isWalking) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
     try {
-      // profiles 컬렉션에 위치 정보 저장 (문서가 없으면 생성, 있으면 업데이트)
       await _firestore.collection('profiles').doc(user.uid).set({
         'location': GeoPoint(position.latitude, position.longitude),
         'isWalking': isWalking,
@@ -38,70 +35,34 @@ class LocationQueryService {
     }
   }
 
-  /// 산책 종료 시 위치 정보 초기화
-  Future<void> stopWalking() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    try {
-      // profiles 컬렉션에 isWalking 상태 업데이트
-      await _firestore.collection('profiles').doc(user.uid).set({
-        'isWalking': false,
-        'lastActiveAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } catch (e) {
-      print('산책 종료 처리 오류: $e');
-    }
-  }
-
-  /// 주변 사용자 탐색 스트림
-  /// 
-  /// [currentPosition] 현재 위치
-  /// 반환: 주변 사용자 목록 스트림 (1KM 반경 내, 위치 정보가 있는 모든 사용자)
+  /// 주변 사용자 탐색 스트림 (1km 이내)
   Stream<List<UserLocationModel>> findNearbyWalkers(Position currentPosition) {
     final controller = StreamController<List<UserLocationModel>>();
     
-    // Firestore에서 위치 정보가 있는 모든 사용자 스트림 구독 (profiles 컬렉션에서 조회)
-    // isWalking 필터 제거 - 위치가 있는 모든 사용자 조회
     _walkersSubscription = _firestore
         .collection('profiles')
         .snapshots()
         .listen((snapshot) {
       try {
         final nearbyWalkers = <UserLocationModel>[];
-        
         for (var doc in snapshot.docs) {
-          // 현재 사용자는 제외
           if (doc.id == _auth.currentUser?.uid) continue;
-          
-          // location 필드가 있는지 확인
           final data = doc.data();
-          if (data['location'] == null) continue;  // location이 없으면 건너뛰기
+          if (data['location'] == null) continue;
           
-          try {
-            final userLocation = UserLocationModel.fromFirestore(
-              doc,
-              currentPosition.latitude,
-              currentPosition.longitude,
-            );
-            
-            // 1km 이내만 필터링
-            if (userLocation.distanceInMeters <= _searchRadiusInMeters) {
-              nearbyWalkers.add(userLocation);
-            }
-          } catch (e) {
-            // 위치 데이터 파싱 오류 무시
-            print('사용자 위치 파싱 오류: ${doc.id} - $e');
+          final userLocation = UserLocationModel.fromFirestore(
+            doc,
+            currentPosition.latitude,
+            currentPosition.longitude,
+          );
+          
+          if (userLocation.distanceInMeters <= _searchRadiusInMeters) {
+            nearbyWalkers.add(userLocation);
           }
         }
-        
-        // 거리순으로 정렬
-        nearbyWalkers.sort((a, b) => 
-            a.distanceInMeters.compareTo(b.distanceInMeters));
-        
+        nearbyWalkers.sort((a, b) => a.distanceInMeters.compareTo(b.distanceInMeters));
         controller.add(nearbyWalkers);
       } catch (e) {
-        print('주변 사용자 필터링 오류: $e');
         controller.add([]);
       }
     });
@@ -109,37 +70,70 @@ class LocationQueryService {
     return controller.stream;
   }
 
-  /// 위치 업데이트 시작 (산책 중일 때)
-  /// 
-  /// [onLocationUpdate] 위치 업데이트 콜백
-  void startLocationUpdates(void Function(Position) onLocationUpdate) {
-    _stopLocationUpdates(); // 기존 구독 정리
+  /// 맞팔 친구 위치 탐색 스트림 (거리 제한 없음)
+  Stream<List<UserLocationModel>> findMutualFollowers(Position currentPosition) {
+    final controller = StreamController<List<UserLocationModel>>();
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return Stream.value([]);
 
+    _friendsSubscription = _firestore
+        .collection('profiles')
+        .snapshots()
+        .listen((snapshot) async {
+      try {
+        final followsSnapshot = await _firestore.collection('follows').where('followerId', isEqualTo: userId).get();
+        final followersSnapshot = await _firestore.collection('follows').where('followingId', isEqualTo: userId).get();
+
+        final followingIds = followsSnapshot.docs.map((doc) => doc.data()['followingId'] as String).toSet();
+        final followerIds = followersSnapshot.docs.map((doc) => doc.data()['followerId'] as String).toSet();
+
+        final mutualIds = followingIds.intersection(followerIds);
+
+        final friends = <UserLocationModel>[];
+        for (var doc in snapshot.docs) {
+          if (mutualIds.contains(doc.id)) {
+            final data = doc.data();
+            if (data['location'] == null) continue;
+            
+            friends.add(UserLocationModel.fromFirestore(
+              doc,
+              currentPosition.latitude,
+              currentPosition.longitude,
+            ));
+          }
+        }
+        friends.sort((a, b) => a.distanceInMeters.compareTo(b.distanceInMeters));
+        controller.add(friends);
+      } catch (e) {
+        print('맞팔 친구 필터링 오류: $e');
+        controller.add([]);
+      }
+    });
+
+    return controller.stream;
+  }
+
+  /// 위치 업데이트 시작
+  void startLocationUpdates(void Function(Position) onLocationUpdate) {
+    _stopLocationUpdates();
     Position? lastPosition;
-    
     _positionSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: _minDistanceForUpdate,
-      ),
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: _minDistanceForUpdate),
     ).listen((position) {
       lastPosition = position;
       onLocationUpdate(position);
     });
-
-    // 주기적으로 위치 업데이트 (이동 거리가 적어도)
     _locationUpdateTimer = Timer.periodic(_locationUpdateInterval, (timer) {
-      if (lastPosition != null) {
-        onLocationUpdate(lastPosition!);
-      }
+      if (lastPosition != null) onLocationUpdate(lastPosition!);
     });
   }
 
-  /// 위치 업데이트 중지
+  /// 위치 업데이트 중지 (외부 호출용)
   void stopLocationUpdates() {
     _stopLocationUpdates();
   }
 
+  /// 내부 업데이트 중지 로직
   void _stopLocationUpdates() {
     _positionSubscription?.cancel();
     _positionSubscription = null;
@@ -147,10 +141,9 @@ class LocationQueryService {
     _locationUpdateTimer = null;
   }
 
-  /// 리소스 정리
   void dispose() {
     _stopLocationUpdates();
     _walkersSubscription?.cancel();
-    _walkersSubscription = null;
+    _friendsSubscription?.cancel();
   }
 }
