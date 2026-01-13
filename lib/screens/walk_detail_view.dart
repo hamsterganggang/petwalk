@@ -4,6 +4,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import '../utils/theme_config.dart';
+import 'full_screen_map_view.dart';
 
 class WalkDetailView extends StatelessWidget {
   final String docId;
@@ -35,36 +36,74 @@ class WalkDetailView extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('산책 상세 정보'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.fullscreen),
+            onPressed: () => _navigateToFullScreenMap(context, points),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 지도 영역
-            SizedBox(
-              height: 250,
-              child: FlutterMap(
-                options: MapOptions(
-                  initialCenter: points.isNotEmpty 
-                      ? points[points.length ~/ 2] 
-                      : const LatLng(37.5665, 126.9780),
-                  initialZoom: 15.0,
-                ),
+            // 지도 영역 (크기 키움: 350)
+            GestureDetector(
+              onTap: () => _navigateToFullScreenMap(context, points),
+              child: Stack(
                 children: [
-                  TileLayer(
-                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.petwalk.app',
-                  ),
-                  if (points.isNotEmpty)
-                    PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          points: points,
-                          strokeWidth: 5.0,
-                          color: AppColors.primaryGreen,
+                  SizedBox(
+                    height: 350,
+                    child: FlutterMap(
+                      options: MapOptions(
+                        initialCenter: points.isNotEmpty 
+                            ? points[points.length ~/ 2] 
+                            : const LatLng(37.5665, 126.9780),
+                        initialZoom: 15.0,
+                        interactionOptions: const InteractionOptions(
+                          flags: InteractiveFlag.none, // 상세뷰에서는 조작 방지 (탭하여 이동 유도)
                         ),
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.petwalk.app',
+                        ),
+                        if (points.isNotEmpty)
+                          PolylineLayer(
+                            polylines: [
+                              Polyline(
+                                points: points,
+                                strokeWidth: 5.0,
+                                color: AppColors.primaryGreen,
+                              ),
+                            ],
+                          ),
                       ],
                     ),
+                  ),
+                  // 지도 위에 안내 문구 표시
+                  Positioned(
+                    bottom: 16,
+                    right: 16,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.zoom_out_map, color: Colors.white, size: 14),
+                          SizedBox(width: 6),
+                          Text(
+                            '지도를 눌러 크게 보기',
+                            style: TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -141,14 +180,6 @@ class WalkDetailView extends StatelessWidget {
                         width: double.infinity,
                         height: 250,
                         fit: BoxFit.cover,
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Container(
-                            height: 250,
-                            color: Colors.grey[200],
-                            child: const Center(child: CircularProgressIndicator()),
-                          );
-                        },
                         errorBuilder: (context, error, stackTrace) => Container(
                           height: 200,
                           color: Colors.grey[200],
@@ -178,6 +209,15 @@ class WalkDetailView extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _navigateToFullScreenMap(BuildContext context, List<LatLng> points) {
+    if (points.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => FullScreenMapView(points: points),
       ),
     );
   }
