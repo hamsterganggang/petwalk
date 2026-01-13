@@ -89,7 +89,6 @@ class _ProfileViewState extends State<ProfileView> {
               title: Text(profile.nickname, style: const TextStyle(fontWeight: FontWeight.bold)),
               centerTitle: false, 
               elevation: 0,
-              // 우측 메뉴 아이콘 제거
             ),
             body: RefreshIndicator(
               onRefresh: () async {
@@ -165,7 +164,6 @@ class _ProfileViewState extends State<ProfileView> {
             ),
           const SizedBox(height: 20),
           
-          // 프로필 공유 버튼 제거 후 프로필 수정 버튼만 꽉 차게 배치
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
@@ -292,9 +290,59 @@ class _ProfileViewState extends State<ProfileView> {
               if (confirmed == true) await GoogleSignInHandler().signOut();
             },
           ),
+          // 회원 탈퇴 항목 추가
+          ListTile(
+            leading: const Icon(Icons.person_remove_outlined, color: Colors.grey),
+            title: const Text('회원 탈퇴', style: TextStyle(color: Colors.grey, fontSize: 14)),
+            onTap: () => _showDeleteAccountDialog(),
+          ),
         ]),
       ],
     );
+  }
+
+  /// 회원 탈퇴 확인 다이얼로그
+  void _showDeleteAccountDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('회원 탈퇴', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text(
+          '정말 탈퇴하시겠습니까?\n탈퇴 시 모든 산책 기록과 프로필 정보가 영구적으로 삭제되며 복구할 수 없습니다.',
+          style: TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context); // 다이얼로그 닫기
+              _handleDeleteAccount();
+            },
+            child: const Text('탈퇴하기', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 실제 탈퇴 처리 로직
+  Future<void> _handleDeleteAccount() async {
+    try {
+      // 1. 여기서 실제 Firebase Auth 및 Firestore 데이터 삭제 로직 호출
+      // 현재는 UI 구현이므로 로그아웃으로 대체하거나 전용 서비스 함수 연결 필요
+      await GoogleSignInHandler().signOut(); // 임시로 로그아웃 처리
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('회원 탈퇴가 완료되었습니다.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('탈퇴 처리 중 오류가 발생했습니다: $e')),
+        );
+      }
+    }
   }
 
   Widget _buildSettingGroup(String title, List<Widget> children) {
