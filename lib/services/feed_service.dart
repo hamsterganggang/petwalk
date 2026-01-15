@@ -12,8 +12,8 @@ class FeedItem {
   final String? memo;
   final String mood;
   final List<String> imageUrls;
-  final List<dynamic> route; // 이동 경로 추가
-  final List<dynamic> petNames; // 함께한 반려동물 추가
+  final List<dynamic> route;
+  final List<dynamic> petNames;
   final DateTime createdAt;
   final int likeCount;
   final bool isLiked;
@@ -77,7 +77,7 @@ class FeedItem {
     );
   }
 
-  /// WalkDetailView에서 사용할 수 있도록 Map으로 변환
+  /// WalkDetailView에서 사용할 수 있도록 Map으로 변환 (likeCount 추가)
   Map<String, dynamic> toWalkDataMap() {
     return {
       'startTime': Timestamp.fromDate(startTime),
@@ -89,6 +89,7 @@ class FeedItem {
       'route': route,
       'petNames': petNames,
       'userId': userId,
+      'likeCount': likeCount, // 상세 페이지를 위해 추가
     };
   }
 }
@@ -108,13 +109,11 @@ class FeedService {
       final user = _auth.currentUser;
       final userId = user?.uid;
 
-      // 공개된 산책 기록 쿼리
       Query publicQuery = _firestore
           .collection('walks')
           .where('isPublic', isEqualTo: true)
           .orderBy('createdAt', descending: true);
 
-      // 현재 사용자의 산책 기록 쿼리
       Query? userQuery;
       if (userId != null) {
         userQuery = _firestore
@@ -123,7 +122,6 @@ class FeedService {
             .orderBy('createdAt', descending: true);
       }
 
-      // 팔로우한 사람들의 ID 목록 가져오기
       List<String> followingIds = [];
       if (userId != null) {
         final followsSnapshot = await _firestore
