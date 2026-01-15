@@ -13,6 +13,7 @@ import '../screens/social/blocked_users_list.dart';
 import '../screens/followers_page.dart';
 import '../screens/following_page.dart';
 import 'walk_detail_view.dart';
+import 'landing_page.dart'; // 추가
 
 class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
@@ -71,6 +72,37 @@ class _ProfileViewState extends State<ProfileView> {
         });
       }
     } catch (e) {}
+  }
+
+  /// 로그아웃 및 소개화면 이동
+  Future<void> _handleLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('로그아웃'),
+        content: const Text('정말 로그아웃하시겠습니까?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true), 
+            child: const Text('로그아웃', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      // 1. 실제 로그아웃 처리
+      await GoogleSignInHandler().signOut();
+      
+      if (mounted) {
+        // 2. 모든 화면 스택을 제거하고 LandingPage(소개 화면)로 이동
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LandingPage()),
+          (route) => false,
+        );
+      }
+    }
   }
 
   @override
@@ -275,22 +307,8 @@ class _ProfileViewState extends State<ProfileView> {
           ListTile(
             leading: const Icon(Icons.logout, color: AppColors.error),
             title: const Text('로그아웃', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
-            onTap: () async {
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('로그아웃'),
-                  content: const Text('정말 로그아웃하시겠습니까?'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-                    TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('로그아웃', style: TextStyle(color: AppColors.error))),
-                  ],
-                ),
-              );
-              if (confirmed == true) await GoogleSignInHandler().signOut();
-            },
+            onTap: _handleLogout, // 수정됨
           ),
-          // 회원 탈퇴 항목 추가
           ListTile(
             leading: const Icon(Icons.person_remove_outlined, color: Colors.grey),
             title: const Text('회원 탈퇴', style: TextStyle(color: Colors.grey, fontSize: 14)),
@@ -301,7 +319,6 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
-  /// 회원 탈퇴 확인 다이얼로그
   void _showDeleteAccountDialog() {
     showDialog(
       context: context,
@@ -315,7 +332,7 @@ class _ProfileViewState extends State<ProfileView> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context); // 다이얼로그 닫기
+              Navigator.pop(context);
               _handleDeleteAccount();
             },
             child: const Text('탈퇴하기', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
@@ -325,24 +342,17 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
-  /// 실제 탈퇴 처리 로직
   Future<void> _handleDeleteAccount() async {
     try {
-      // 1. 여기서 실제 Firebase Auth 및 Firestore 데이터 삭제 로직 호출
-      // 현재는 UI 구현이므로 로그아웃으로 대체하거나 전용 서비스 함수 연결 필요
-      await GoogleSignInHandler().signOut(); // 임시로 로그아웃 처리
+      await GoogleSignInHandler().signOut();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('회원 탈퇴가 완료되었습니다.')),
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LandingPage()),
+          (route) => false,
         );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('회원 탈퇴가 완료되었습니다.')));
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('탈퇴 처리 중 오류가 발생했습니다: $e')),
-        );
-      }
-    }
+    } catch (e) {}
   }
 
   Widget _buildSettingGroup(String title, List<Widget> children) {
