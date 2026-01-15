@@ -18,7 +18,6 @@ class FeedItem {
   final int likeCount;
   final bool isLiked;
 
-  // 사용자 정보
   final String? userNickname;
   final String? userProfileImageUrl;
 
@@ -92,13 +91,12 @@ class FeedItem {
   }
 }
 
-/// 피드 데이터를 관리하는 서비스 클래스
 class FeedService {
   final FirebaseFirestore _firestore = FirebaseService.getFirestore();
   final FirebaseAuth _auth = FirebaseService.getAuth();
   static const int _pageSize = 10;
 
-  /// 공개 피드 로드 (비공개 계정 필터링 포함)
+  /// [개선] 공개 피드 로드 (팔로우 중인 비공개 계정 허용)
   Future<({List<FeedItem> items, DocumentSnapshot? lastDoc})> loadPublicFeed({
     DocumentSnapshot? lastDocument,
     required Map<String, bool> likeStatusMap,
@@ -107,33 +105,27 @@ class FeedService {
       final user = _auth.currentUser;
       final currentUserId = user?.uid;
 
-      // 1. 기본 쿼리: 공개 설정된 게시물들
-      Query publicQuery = _firestore
-          .collection('walks')
-          .where('isPublic', isEqualTo: true)
-          .orderBy('createdAt', descending: true);
+      // 1. 내 팔로잉 목록 가져오기 (비공개 필터링용)
+      List<String> followingIds = [];
+      if (currentUserId != null) {
+        final followsSnapshot = await _firestore.collection('follows').where('followerId', isEqualTo: currentUserId).get();
+        followingIds = followsSnapshot.docs.map((doc) => doc.data()['followingId'] as String).toList();
+      }
 
-      // 페이지네이션을 위해 넉넉히 불러옴 (필터링 대비)
+      // 2. 기본 공개 게시물 쿼리
+      Query publicQuery = _firestore.collection('walks').where('isPublic', isEqualTo: true).orderBy('createdAt', descending: true);
       final fetchLimit = _pageSize * 4;
       QuerySnapshot publicSnapshot = await publicQuery.limit(fetchLimit).get();
 
-      // 2. 내 게시물도 추가로 불러옴 (비공개여도 나는 보여야 함)
+      // 3. 내 게시물
       QuerySnapshot? userSnapshot;
       if (currentUserId != null) {
-        userSnapshot = await _firestore
-            .collection('walks')
-            .where('userId', isEqualTo: currentUserId)
-            .orderBy('createdAt', descending: true)
-            .limit(fetchLimit)
-            .get();
+        userSnapshot = await _firestore.collection('walks').where('userId', isEqualTo: currentUserId).orderBy('createdAt', descending: true).limit(fetchLimit).get();
       }
 
-      // 3. 합치기 및 중복 제거
       final allDocs = <String, QueryDocumentSnapshot>{};
       for (var doc in publicSnapshot.docs) allDocs[doc.id] = doc;
-      if (userSnapshot != null) {
-        for (var doc in userSnapshot.docs) allDocs[doc.id] = doc;
-      }
+      if (userSnapshot != null) for (var doc in userSnapshot.docs) allDocs[doc.id] = doc;
 
       final sortedDocs = allDocs.values.toList()
         ..sort((a, b) {
@@ -142,78 +134,85 @@ class FeedService {
           return (bTime ?? Timestamp.now()).compareTo(aTime ?? Timestamp.now());
         });
 
-      // 4. 사용자 정보 일괄 조회
       final userIds = sortedDocs.map((doc) => (doc.data() as Map)['userId'] as String).toSet().toList();
       final userMap = await _fetchUsers(userIds);
 
-      // 5. 비공개 계정 게시물 필터링
       final filteredItems = <FeedItem>[];
       for (var doc in sortedDocs) {
         final data = doc.data() as Map<String, dynamic>;
         final userId = data['userId'] as String;
         final userInfo = userMap[userId];
         
-        // 필터링 로직:
-        // - 내 게시물은 무조건 노출
-        // - 타인의 게시물인데 계정이 비공개(isPrivate: true)면 제외
         final bool isPrivateAccount = userInfo?['isPrivate'] ?? false;
-        if (userId != currentUserId && isPrivateAccount) {
-          continue; // 비공개 계정 게시물 건너뛰기
+        // 필터링: (내꺼 아님) AND (비공개 계정임) AND (팔로우 안함) 이면 숨김
+        if (userId != currentUserId && isPrivateAccount && !followingIds.contains(userId)) {
+          continue;
         }
 
-        final startTime = (data['startTime'] as Timestamp).toDate();
-        filteredItems.add(FeedItem(
-          walkId: doc.id,
-          userId: userId,
-          startTime: startTime,
-          endTime: (data['endTime'] as Timestamp).toDate(),
-          totalDistance: (data['totalDistance'] as num?)?.toDouble() ?? 0.0,
-          memo: data['memo'] as String?,
-          mood: data['mood'] as String? ?? '😊',
-          imageUrls: (data['imageUrls'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
-          route: data['route'] as List<dynamic>? ?? [],
-          petNames: data['petNames'] as List<dynamic>? ?? [],
-          createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? startTime,
-          likeCount: (data['likeCount'] as int?) ?? 0,
-          isLiked: likeStatusMap[doc.id] ?? false,
-          userNickname: userInfo?['nickname'] as String?,
-          userProfileImageUrl: (userInfo?['photoURL'] ?? userInfo?['photoUrl'] ?? userInfo?['profileImageUrl']) as String?,
-        ));
+        filteredItems.add(_mapToFeedItem(doc, userInfo, likeStatusMap));
       }
 
-      // 6. 결과 반환 (페이지네이션 적용)
       final items = filteredItems.take(_pageSize).toList();
       final lastDoc = items.isNotEmpty ? sortedDocs.firstWhere((doc) => doc.id == items.last.walkId) : null;
-
       return (items: items, lastDoc: lastDoc);
+    } catch (e) { rethrow; }
+  }
+
+  /// [신규] 특정 사용자의 피드 로드 (팔로워면 모든 게시물, 아니면 공개만)
+  Future<List<FeedItem>> loadUserFeeds({
+    required String targetUserId,
+    required bool isFollower,
+    required Map<String, bool> likeStatusMap,
+  }) async {
+    try {
+      final currentUserId = _auth.currentUser?.uid;
+      Query query = _firestore.collection('walks').where('userId', isEqualTo: targetUserId);
+      
+      // 본인이거나 팔로워가 아니면 'isPublic: true' 게시물만 가져옴
+      if (targetUserId != currentUserId && !isFollower) {
+        query = query.where('isPublic', isEqualTo: true);
+      }
+      
+      final snapshot = await query.orderBy('createdAt', descending: true).get();
+      final userMap = await _fetchUsers([targetUserId]);
+      final userInfo = userMap[targetUserId];
+
+      return snapshot.docs.map((doc) => _mapToFeedItem(doc, userInfo, likeStatusMap)).toList();
     } catch (e) {
-      print('피드 로드 오류: $e');
-      rethrow;
+      print('사용자 피드 로드 오류: $e');
+      return [];
     }
+  }
+
+  FeedItem _mapToFeedItem(DocumentSnapshot doc, Map<String, dynamic>? userInfo, Map<String, bool> likeStatusMap) {
+    final data = doc.data() as Map<String, dynamic>;
+    final startTime = (data['startTime'] as Timestamp).toDate();
+    return FeedItem(
+      walkId: doc.id,
+      userId: data['userId'] as String,
+      startTime: startTime,
+      endTime: (data['endTime'] as Timestamp).toDate(),
+      totalDistance: (data['totalDistance'] as num?)?.toDouble() ?? 0.0,
+      memo: data['memo'] as String?,
+      mood: data['mood'] as String? ?? '😊',
+      imageUrls: (data['imageUrls'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      route: data['route'] as List<dynamic>? ?? [],
+      petNames: data['petNames'] as List<dynamic>? ?? [],
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? startTime,
+      likeCount: (data['likeCount'] as int?) ?? 0,
+      isLiked: likeStatusMap[doc.id] ?? false,
+      userNickname: userInfo?['nickname'] as String?,
+      userProfileImageUrl: (userInfo?['photoURL'] ?? userInfo?['photoUrl'] ?? userInfo?['profileImageUrl']) as String?,
+    );
   }
 
   Future<Map<String, Map<String, dynamic>>> _fetchUsers(List<String> userIds) async {
     if (userIds.isEmpty) return {};
     final userMap = <String, Map<String, dynamic>>{};
-    final foundIds = <String>{};
-
     for (var i = 0; i < userIds.length; i += 10) {
       final batch = userIds.skip(i).take(10).toList();
-      try {
-        final profilesSnapshot = await _firestore.collection('profiles').where(FieldPath.documentId, whereIn: batch).get();
-        for (var doc in profilesSnapshot.docs) {
-          userMap[doc.id] = doc.data();
-          foundIds.add(doc.id);
-        }
-      } catch (_) {}
-
-      final notFound = batch.where((id) => !foundIds.contains(id)).toList();
-      if (notFound.isNotEmpty) {
-        try {
-          final usersSnapshot = await _firestore.collection('users').where(FieldPath.documentId, whereIn: notFound).get();
-          for (var doc in usersSnapshot.docs) userMap[doc.id] = doc.data();
-        } catch (_) {}
-      }
+      final profilesSnapshot = await _firestore.collection('profiles').where(FieldPath.documentId, whereIn: batch).get();
+      for (var doc in profilesSnapshot.docs) userMap[doc.id] = doc.data();
     }
     return userMap;
   }
