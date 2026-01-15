@@ -40,7 +40,6 @@ class FeedItem {
     this.userProfileImageUrl,
   });
 
-  /// 좋아요 상태와 카운트를 업데이트한 새 인스턴스 생성
   FeedItem copyWith({
     String? walkId,
     String? userId,
@@ -77,7 +76,6 @@ class FeedItem {
     );
   }
 
-  /// WalkDetailView에서 사용할 수 있도록 Map으로 변환 (likeCount 추가)
   Map<String, dynamic> toWalkDataMap() {
     return {
       'startTime': Timestamp.fromDate(startTime),
@@ -89,7 +87,7 @@ class FeedItem {
       'route': route,
       'petNames': petNames,
       'userId': userId,
-      'likeCount': likeCount, // 상세 페이지를 위해 추가
+      'likeCount': likeCount,
     };
   }
 }
@@ -100,113 +98,71 @@ class FeedService {
   final FirebaseAuth _auth = FirebaseService.getAuth();
   static const int _pageSize = 10;
 
-  /// 공개 피드 및 사용자 산책 기록 로드 (페이지네이션)
+  /// 공개 피드 로드 (비공개 계정 필터링 포함)
   Future<({List<FeedItem> items, DocumentSnapshot? lastDoc})> loadPublicFeed({
     DocumentSnapshot? lastDocument,
     required Map<String, bool> likeStatusMap,
   }) async {
     try {
       final user = _auth.currentUser;
-      final userId = user?.uid;
+      final currentUserId = user?.uid;
 
+      // 1. 기본 쿼리: 공개 설정된 게시물들
       Query publicQuery = _firestore
           .collection('walks')
           .where('isPublic', isEqualTo: true)
           .orderBy('createdAt', descending: true);
 
-      Query? userQuery;
-      if (userId != null) {
-        userQuery = _firestore
-            .collection('walks')
-            .where('userId', isEqualTo: userId)
-            .orderBy('createdAt', descending: true);
-      }
+      // 페이지네이션을 위해 넉넉히 불러옴 (필터링 대비)
+      final fetchLimit = _pageSize * 4;
+      QuerySnapshot publicSnapshot = await publicQuery.limit(fetchLimit).get();
 
-      List<String> followingIds = [];
-      if (userId != null) {
-        final followsSnapshot = await _firestore
-            .collection('follows')
-            .where('followerId', isEqualTo: userId)
-            .get();
-        followingIds = followsSnapshot.docs
-            .map((doc) => doc.data()['followingId'] as String)
-            .toList();
-      }
-
-      final fetchLimit = _pageSize * 3;
-      QuerySnapshot publicSnapshot;
+      // 2. 내 게시물도 추가로 불러옴 (비공개여도 나는 보여야 함)
       QuerySnapshot? userSnapshot;
-
-      if (userQuery != null) {
-        final results = await Future.wait<QuerySnapshot>([
-          publicQuery.limit(fetchLimit).get(),
-          userQuery.limit(fetchLimit).get(),
-        ]);
-        publicSnapshot = results[0];
-        userSnapshot = results[1];
-      } else {
-        publicSnapshot = await publicQuery.limit(fetchLimit).get();
-        userSnapshot = null;
+      if (currentUserId != null) {
+        userSnapshot = await _firestore
+            .collection('walks')
+            .where('userId', isEqualTo: currentUserId)
+            .orderBy('createdAt', descending: true)
+            .limit(fetchLimit)
+            .get();
       }
 
-      List<QuerySnapshot> followingSnapshots = [];
-      if (followingIds.isNotEmpty) {
-        for (var i = 0; i < followingIds.length; i += 10) {
-          final batch = followingIds.skip(i).take(10).toList();
-          final snapshot = await _firestore
-              .collection('walks')
-              .where('userId', whereIn: batch)
-              .orderBy('createdAt', descending: true)
-              .limit(fetchLimit)
-              .get();
-          followingSnapshots.add(snapshot);
-        }
-      }
-
+      // 3. 합치기 및 중복 제거
       final allDocs = <String, QueryDocumentSnapshot>{};
       for (var doc in publicSnapshot.docs) allDocs[doc.id] = doc;
       if (userSnapshot != null) {
         for (var doc in userSnapshot.docs) allDocs[doc.id] = doc;
       }
-      for (var snapshot in followingSnapshots) {
-        for (var doc in snapshot.docs) allDocs[doc.id] = doc;
-      }
 
       final sortedDocs = allDocs.values.toList()
         ..sort((a, b) {
-          final aData = a.data() as Map<String, dynamic>;
-          final bData = b.data() as Map<String, dynamic>;
-          Timestamp? aTime = (aData['createdAt'] ?? aData['startTime']) as Timestamp?;
-          Timestamp? bTime = (bData['createdAt'] ?? bData['startTime']) as Timestamp?;
-          if (aTime == null || bTime == null) return 0;
-          return bTime.compareTo(aTime);
+          Timestamp? aTime = ((a.data() as Map)['createdAt'] ?? (a.data() as Map)['startTime']) as Timestamp?;
+          Timestamp? bTime = ((b.data() as Map)['createdAt'] ?? (b.data() as Map)['startTime']) as Timestamp?;
+          return (bTime ?? Timestamp.now()).compareTo(aTime ?? Timestamp.now());
         });
 
-      List<QueryDocumentSnapshot> paginatedDocs;
-      if (lastDocument == null) {
-        paginatedDocs = sortedDocs.take(_pageSize).toList();
-      } else {
-        final lastIndex = sortedDocs.indexWhere((doc) => doc.id == lastDocument.id);
-        if (lastIndex == -1 || lastIndex >= sortedDocs.length - 1) {
-          return (items: const <FeedItem>[], lastDoc: null);
-        }
-        paginatedDocs = sortedDocs.skip(lastIndex + 1).take(_pageSize).toList();
-      }
-
-      if (paginatedDocs.isEmpty) return (items: const <FeedItem>[], lastDoc: null);
-
-      final userIds = paginatedDocs
-          .map((doc) => (doc.data() as Map<String, dynamic>)['userId'] as String)
-          .toSet().toList();
+      // 4. 사용자 정보 일괄 조회
+      final userIds = sortedDocs.map((doc) => (doc.data() as Map)['userId'] as String).toSet().toList();
       final userMap = await _fetchUsers(userIds);
 
-      final items = paginatedDocs.map((doc) {
+      // 5. 비공개 계정 게시물 필터링
+      final filteredItems = <FeedItem>[];
+      for (var doc in sortedDocs) {
         final data = doc.data() as Map<String, dynamic>;
         final userId = data['userId'] as String;
         final userInfo = userMap[userId];
-        final startTime = (data['startTime'] as Timestamp).toDate();
+        
+        // 필터링 로직:
+        // - 내 게시물은 무조건 노출
+        // - 타인의 게시물인데 계정이 비공개(isPrivate: true)면 제외
+        final bool isPrivateAccount = userInfo?['isPrivate'] ?? false;
+        if (userId != currentUserId && isPrivateAccount) {
+          continue; // 비공개 계정 게시물 건너뛰기
+        }
 
-        return FeedItem(
+        final startTime = (data['startTime'] as Timestamp).toDate();
+        filteredItems.add(FeedItem(
           walkId: doc.id,
           userId: userId,
           startTime: startTime,
@@ -222,10 +178,14 @@ class FeedService {
           isLiked: likeStatusMap[doc.id] ?? false,
           userNickname: userInfo?['nickname'] as String?,
           userProfileImageUrl: (userInfo?['photoURL'] ?? userInfo?['photoUrl'] ?? userInfo?['profileImageUrl']) as String?,
-        );
-      }).toList();
+        ));
+      }
 
-      return (items: items, lastDoc: paginatedDocs.last);
+      // 6. 결과 반환 (페이지네이션 적용)
+      final items = filteredItems.take(_pageSize).toList();
+      final lastDoc = items.isNotEmpty ? sortedDocs.firstWhere((doc) => doc.id == items.last.walkId) : null;
+
+      return (items: items, lastDoc: lastDoc);
     } catch (e) {
       print('피드 로드 오류: $e');
       rethrow;
