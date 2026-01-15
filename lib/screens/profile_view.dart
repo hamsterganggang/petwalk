@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/profile_state_manager.dart';
 import '../providers/user_auth_state.dart';
 import '../models/user_profile.dart';
@@ -107,7 +108,7 @@ class _ProfileViewState extends State<ProfileView> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('비밀번호 변경', style: TextStyle(fontWeight: FontWeight.bold)),
-          content: Container( // 너비 및 높이 조절을 위한 컨테이너
+          content: Container(
             width: double.maxFinite,
             child: Form(
               key: formKey,
@@ -128,7 +129,7 @@ class _ProfileViewState extends State<ProfileView> {
                       decoration: const InputDecoration(labelText: '변경 비밀번호', hintText: '새 비밀번호 입력'),
                       validator: (v) {
                         if (v == null || v.length < 6) return '6자 이상 입력해주세요.';
-                        if (v == currentPasswordController.text) return '기존과 다른 비밀번호를 입력하세요.'; // 간소화
+                        if (v == currentPasswordController.text) return '기존과 다른 비밀번호를 입력하세요.';
                         return null;
                       },
                     ),
@@ -179,6 +180,45 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
+  void _showEditNicknameDialog(ProfileStateManager profileManager) {
+    final controller = TextEditingController(text: profileManager.profile?.nickname);
+    bool isUpdating = false;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('닉네임 변경', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(labelText: '새 닉네임', hintText: '사용할 닉네임을 입력하세요'),
+          ),
+          actions: [
+            TextButton(onPressed: isUpdating ? null : () => Navigator.pop(context), child: const Text('취소')),
+            ElevatedButton(
+              onPressed: isUpdating ? null : () async {
+                final newNickname = controller.text.trim();
+                if (newNickname.isEmpty) return;
+                setDialogState(() => isUpdating = true);
+                final success = await profileManager.updateNickname(newNickname);
+                if (mounted) {
+                  if (success) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('닉네임이 변경되었습니다.')));
+                  } else {
+                    setDialogState(() => isUpdating = false);
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(profileManager.errorMessage ?? '변경 실패'), backgroundColor: AppColors.error));
+                  }
+                }
+              },
+              child: isUpdating ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('변경'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<ProfileStateManager, UserAuthState>(
@@ -188,33 +228,42 @@ class _ProfileViewState extends State<ProfileView> {
 
         return DefaultTabController(
           length: 2,
-          child: Scaffold(
-            appBar: AppBar(
-              title: Text(profile.nickname, style: const TextStyle(fontWeight: FontWeight.bold)),
-              centerTitle: false, 
-              elevation: 0,
-            ),
-            body: RefreshIndicator(
-              onRefresh: () async {
-                await profileManager.refresh();
-                await _loadMyFeeds(profile.uid);
-                await _updateFilteredCounts(profile.uid);
-              },
-              child: Column(
-                children: [
-                  _buildProfileHeader(profile, profileManager),
-                  const TabBar(
-                    indicatorColor: Colors.black87,
-                    labelColor: Colors.black87,
-                    unselectedLabelColor: Colors.grey,
-                    tabs: [Tab(icon: Icon(Icons.grid_on)), Tab(icon: Icon(Icons.settings))],
+          child: RefreshIndicator(
+            onRefresh: () async {
+              await profileManager.refresh();
+              await _loadMyFeeds(profile.uid);
+              await _updateFilteredCounts(profile.uid);
+            },
+            child: Scaffold(
+              body: NestedScrollView(
+                headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                  SliverAppBar(
+                    title: Text(profile.nickname, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    pinned: true,
+                    floating: true,
+                    elevation: 0,
+                    backgroundColor: Colors.white,
+                    surfaceTintColor: Colors.transparent,
                   ),
-                  Expanded(
-                    child: TabBarView(
-                      children: [_buildMyPostsGrid(), _buildSettingsList(profile, profileManager)],
+                  SliverToBoxAdapter(child: _buildProfileHeader(profile, profileManager)),
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _SliverAppBarDelegate(
+                      const TabBar(
+                        indicatorColor: Colors.black87,
+                        labelColor: Colors.black87,
+                        unselectedLabelColor: Colors.grey,
+                        tabs: [Tab(icon: Icon(Icons.grid_on)), Tab(icon: Icon(Icons.settings))],
+                      ),
                     ),
                   ),
                 ],
+                body: TabBarView(
+                  children: [
+                    _buildMyPostsGrid(), 
+                    _buildSettingsList(profile, profileManager)
+                  ],
+                ),
               ),
             ),
           ),
@@ -274,11 +323,9 @@ class _ProfileViewState extends State<ProfileView> {
   }
 
   Widget _buildMyPostsGrid() {
-    if (_myFeeds.isEmpty) {
-      return const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.camera_alt_outlined, size: 64, color: Colors.grey), SizedBox(height: 16), Text('아직 게시물이 없습니다', style: TextStyle(color: Colors.grey, fontSize: 18, fontWeight: FontWeight.bold))]));
-    }
     return GridView.builder(
       padding: const EdgeInsets.all(1),
+      physics: const AlwaysScrollableScrollPhysics(), // 핵심: 당겨서 새로고침 인식용
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 1, mainAxisSpacing: 1),
       itemCount: _myFeeds.length,
       itemBuilder: (context, index) {
@@ -292,10 +339,26 @@ class _ProfileViewState extends State<ProfileView> {
   }
 
   Widget _buildSettingsList(UserProfile profile, ProfileStateManager profileManager) {
+    final User? user = FirebaseAuth.instance.currentUser;
+    bool isGoogleUser = false;
+    if (user != null) {
+      for (var providerInfo in user.providerData) {
+        if (providerInfo.providerId == 'google.com') { isGoogleUser = true; break; }
+      }
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
+      physics: const AlwaysScrollableScrollPhysics(), // 핵심: 당겨서 새로고침 인식용
       children: [
         _buildSettingGroup('개인정보 및 보안', [
+          ListTile(
+            leading: const Icon(Icons.account_circle_outlined),
+            title: const Text('닉네임 변경'),
+            subtitle: Text('현재: ${profile.nickname}'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _showEditNicknameDialog(profileManager),
+          ),
           _buildSettingTile(
             icon: Icons.map_outlined,
             title: '탐색 위치 표시',
@@ -308,13 +371,13 @@ class _ProfileViewState extends State<ProfileView> {
             subtitle: profile.isPrivate ? '팔로워만 내 정보를 볼 수 있습니다' : '모든 사용자가 내 정보를 볼 수 있습니다',
             trailing: Switch(value: profile.isPrivate, onChanged: (val) => profileManager.updateIsPrivate(val), activeColor: AppColors.primaryGreen),
           ),
-          ListTile(
-            leading: const Icon(Icons.password_outlined),
-            title: const Text('비밀번호 변경'),
-            subtitle: const Text('보안을 위해 비밀번호를 주기적으로 변경하세요'),
-            trailing: const Icon(Icons.chevron_right, size: 20),
-            onTap: _showChangePasswordDialog,
-          ),
+          if (!isGoogleUser)
+            ListTile(
+              leading: const Icon(Icons.password_outlined),
+              title: const Text('비밀번호 변경'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _showChangePasswordDialog,
+            ),
         ]),
         const SizedBox(height: 16),
         _buildSettingGroup('기타 설정', [
@@ -396,11 +459,28 @@ class _ProfileViewState extends State<ProfileView> {
 
   Future<void> _handleDeleteAccount() async {
     try {
-      await GoogleSignInHandler().signOut();
+      await _authService.deleteAccount();
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const LandingPage()), (route) => false);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('회원 탈퇴가 완료되었습니다.')));
       }
-    } catch (e) {}
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.error));
+    }
   }
+}
+
+class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
+  _SliverAppBarDelegate(this._tabBar);
+  final TabBar _tabBar;
+  @override
+  double get minExtent => _tabBar.preferredSize.height;
+  @override
+  double get maxExtent => _tabBar.preferredSize.height;
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(color: Colors.white, child: _tabBar);
+  }
+  @override
+  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) => false;
 }

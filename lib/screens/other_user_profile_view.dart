@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../providers/profile_state_manager.dart';
 import '../services/feed_service.dart';
+import '../services/block_service.dart'; // 추가
 import '../utils/theme_config.dart';
 import 'walk_detail_view.dart';
 import 'followers_page.dart';
@@ -28,6 +29,7 @@ class OtherUserProfileView extends StatefulWidget {
 class _OtherUserProfileViewState extends State<OtherUserProfileView> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FeedService _feedService = FeedService();
+  final BlockService _blockService = BlockService(); // 추가
   
   Map<String, dynamic>? _userData;
   List<FeedItem> _userFeeds = [];
@@ -46,46 +48,92 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
       _loadUserData(),
       _loadUserFeeds(),
       _checkFollowStatus(),
+      _blockService.initialize(), // BlockService 초기화
     ]);
     if (mounted) setState(() => _isLoading = false);
   }
 
-  /// 사용자 기본 정보 로드 (프로필)
   Future<void> _loadUserData() async {
     try {
       final doc = await _firestore.collection('profiles').doc(widget.userId).get();
       if (doc.exists && mounted) {
         setState(() => _userData = doc.data());
       }
-    } catch (e) {
-      print('사용자 정보 로드 오류: $e');
-    }
+    } catch (e) {}
   }
 
-  /// 사용자의 게시물(피드) 목록 로드
   Future<void> _loadUserFeeds() async {
     try {
-      // FeedService를 활용하여 해당 사용자의 공개된 산책 기록만 가져옴
-      final result = await _feedService.loadPublicFeed(
-        likeStatusMap: {}, // 여기서는 좋아요 상태까지는 일단 무시
-      );
-      
-      // 전체 피드 중 해당 사용자의 게시물만 필터링 (간이 구현)
-      // 실제로는 별도의 query가 좋으나 기존 FeedService 호환성을 위해 필터링 사용
+      final result = await _feedService.loadPublicFeed(likeStatusMap: {});
       final filtered = result.items.where((item) => item.userId == widget.userId).toList();
-      
-      if (mounted) {
-        setState(() => _userFeeds = filtered);
-      }
-    } catch (e) {
-      print('피드 로드 오류: $e');
-    }
+      if (mounted) setState(() => _userFeeds = filtered);
+    } catch (e) {}
   }
 
   Future<void> _checkFollowStatus() async {
     final profileManager = Provider.of<ProfileStateManager>(context, listen: false);
     final following = await profileManager.isFollowing(widget.userId);
     if (mounted) setState(() => _isFollowing = following);
+  }
+
+  /// 차단 확인 다이얼로그
+  void _showBlockOptions() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.block, color: AppColors.error),
+              title: const Text('사용자 차단하기', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
+              onTap: () {
+                Navigator.pop(context);
+                _confirmBlock();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.cancel_outlined),
+              title: const Text('취소'),
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmBlock() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('사용자 차단'),
+        content: const Text('이 사용자를 차단하시겠습니까?\n차단하면 서로의 게시물과 위치가 보이지 않게 됩니다.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _handleBlockUser();
+            },
+            child: const Text('차단', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleBlockUser() async {
+    try {
+      await _blockService.blockUser(widget.userId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('사용자가 차단되었습니다.')));
+        Navigator.pop(context); // 차단 후 프로필 화면 닫기
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('차단 처리 중 오류가 발생했습니다.')));
+    }
   }
 
   @override
@@ -98,6 +146,12 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
       appBar: AppBar(
         title: Text(nickname, style: const TextStyle(fontWeight: FontWeight.bold)),
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.more_vert),
+            onPressed: _showBlockOptions, // 더보기 버튼 클릭 시 차단 옵션
+          ),
+        ],
       ),
       body: _isLoading 
           ? const Center(child: CircularProgressIndicator())
@@ -105,7 +159,6 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
               onRefresh: _loadAllData,
               child: CustomScrollView(
                 slivers: [
-                  // 1. 프로필 헤더 영역
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.all(20.0),
@@ -147,7 +200,6 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
                             ),
                           const SizedBox(height: 20),
                           
-                          // 팔로우 버튼
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
@@ -157,8 +209,8 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
                                 } else {
                                   await profileManager.followUser(widget.userId);
                                 }
-                                _checkFollowStatus(); // 상태 갱신
-                                _loadUserData(); // 팔로워 수 갱신
+                                _checkFollowStatus();
+                                _loadUserData();
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _isFollowing ? Colors.grey[200] : AppColors.primaryGreen,
@@ -173,8 +225,6 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
                       ),
                     ),
                   ),
-
-                  // 2. 피드 그리드 영역 (사진들)
                   const SliverToBoxAdapter(child: Divider(height: 1)),
                   SliverPadding(
                     padding: const EdgeInsets.all(2),
