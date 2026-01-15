@@ -1,12 +1,11 @@
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'authentication_handler.dart';
-import 'notification_service.dart'; // 추가
+import 'notification_service.dart';
 
 /// Google Sign-In 처리 클래스
 class GoogleSignInHandler {
   static const String _webClientId = '125120646156-sjva9r9elhe2tjikff2sbstmm1bia8vg.apps.googleusercontent.com';
-  static const String _androidClientId = '125120646156-8mpfvkoj0q3heh65fiiim5mnbg1e3ctd.apps.googleusercontent.com';
   
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: [
@@ -43,7 +42,7 @@ class GoogleSignInHandler {
         googleAccessToken: googleAuth.accessToken!,
       );
       
-      // 로그인 성공 후 FCM 토큰 업데이트 호출 (추가된 부분)
+      // 로그인 성공 후 FCM 토큰 업데이트
       await NotificationService.updateToken();
       
       return result['isNewUser'] as bool;
@@ -56,13 +55,20 @@ class GoogleSignInHandler {
     }
   }
 
-  /// 구글 로그아웃
+  /// 구글 로그아웃 (FCM 토큰 제거 로직 추가)
   Future<void> signOut() async {
     try {
+      // 1. 로그아웃 전 현재 사용자의 FCM 토큰을 서버에서 제거
+      await NotificationService.clearToken();
+      
+      // 2. 소셜 및 인증 로그아웃 수행
       await _googleSignIn.signOut();
       await _authService.logoutUser();
     } catch (e) {
-      rethrow;
+      print('Sign out error: $e');
+      // 토큰 제거 실패하더라도 로그아웃은 계속 시도
+      await _googleSignIn.signOut();
+      await _authService.logoutUser();
     }
   }
 

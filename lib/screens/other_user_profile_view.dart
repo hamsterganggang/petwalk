@@ -3,13 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../providers/profile_state_manager.dart';
 import '../services/feed_service.dart';
-import '../services/block_service.dart'; // 추가
+import '../services/block_service.dart';
 import '../utils/theme_config.dart';
 import 'walk_detail_view.dart';
 import 'followers_page.dart';
 import 'following_page.dart';
 
-/// 타 사용자 프로필 보기 (인스타그램 스타일)
 class OtherUserProfileView extends StatefulWidget {
   final String userId;
   final String? nickname;
@@ -29,7 +28,7 @@ class OtherUserProfileView extends StatefulWidget {
 class _OtherUserProfileViewState extends State<OtherUserProfileView> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FeedService _feedService = FeedService();
-  final BlockService _blockService = BlockService(); // 추가
+  final BlockService _blockService = BlockService();
   
   Map<String, dynamic>? _userData;
   List<FeedItem> _userFeeds = [];
@@ -44,29 +43,34 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
 
   Future<void> _loadAllData() async {
     setState(() => _isLoading = true);
+    
+    // 1. 기본 정보 및 팔로우 상태 로드
     await Future.wait([
       _loadUserData(),
-      _loadUserFeeds(),
       _checkFollowStatus(),
-      _blockService.initialize(), // BlockService 초기화
+      _blockService.initialize(),
     ]);
+    
+    // 2. 피드 로드 (팔로우 중이거나 공개 계정일 때만)
+    final isPrivate = _userData?['isPrivate'] ?? false;
+    if (!isPrivate || _isFollowing) {
+      final feeds = await _feedService.loadUserFeeds(
+        targetUserId: widget.userId,
+        isFollower: _isFollowing,
+        likeStatusMap: {},
+      );
+      if (mounted) setState(() => _userFeeds = feeds);
+    } else {
+      if (mounted) setState(() => _userFeeds = []);
+    }
+    
     if (mounted) setState(() => _isLoading = false);
   }
 
   Future<void> _loadUserData() async {
     try {
       final doc = await _firestore.collection('profiles').doc(widget.userId).get();
-      if (doc.exists && mounted) {
-        setState(() => _userData = doc.data());
-      }
-    } catch (e) {}
-  }
-
-  Future<void> _loadUserFeeds() async {
-    try {
-      final result = await _feedService.loadPublicFeed(likeStatusMap: {});
-      final filtered = result.items.where((item) => item.userId == widget.userId).toList();
-      if (mounted) setState(() => _userFeeds = filtered);
+      if (doc.exists && mounted) setState(() => _userData = doc.data());
     } catch (e) {}
   }
 
@@ -76,7 +80,6 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
     if (mounted) setState(() => _isFollowing = following);
   }
 
-  /// 차단 확인 다이얼로그
   void _showBlockOptions() {
     showModalBottomSheet(
       context: context,
@@ -88,16 +91,9 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
             ListTile(
               leading: const Icon(Icons.block, color: AppColors.error),
               title: const Text('사용자 차단하기', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
-              onTap: () {
-                Navigator.pop(context);
-                _confirmBlock();
-              },
+              onTap: () { Navigator.pop(context); _confirmBlock(); },
             ),
-            ListTile(
-              leading: const Icon(Icons.cancel_outlined),
-              title: const Text('취소'),
-              onTap: () => Navigator.pop(context),
-            ),
+            ListTile(leading: const Icon(Icons.cancel_outlined), title: const Text('취소'), onTap: () => Navigator.pop(context)),
           ],
         ),
       ),
@@ -113,10 +109,7 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
           TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _handleBlockUser();
-            },
+            onPressed: () async { Navigator.pop(context); await _handleBlockUser(); },
             child: const Text('차단', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
           ),
         ],
@@ -129,11 +122,9 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
       await _blockService.blockUser(widget.userId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('사용자가 차단되었습니다.')));
-        Navigator.pop(context); // 차단 후 프로필 화면 닫기
+        Navigator.pop(context);
       }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('차단 처리 중 오류가 발생했습니다.')));
-    }
+    } catch (e) {}
   }
 
   @override
@@ -141,17 +132,14 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
     final profileManager = Provider.of<ProfileStateManager>(context);
     final nickname = _userData?['nickname'] ?? widget.nickname ?? '사용자';
     final photoUrl = _userData?['photoUrl'] ?? _userData?['photoURL'] ?? widget.profileImageUrl;
+    final isPrivate = _userData?['isPrivate'] ?? false;
+    final canSeeContent = !isPrivate || _isFollowing;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(nickname, style: const TextStyle(fontWeight: FontWeight.bold)),
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: _showBlockOptions, // 더보기 버튼 클릭 시 차단 옵션
-          ),
-        ],
+        actions: [IconButton(icon: const Icon(Icons.more_vert), onPressed: _showBlockOptions)],
       ),
       body: _isLoading 
           ? const Center(child: CircularProgressIndicator())
@@ -177,7 +165,7 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                                   children: [
-                                    _buildStatItem('게시물', _userFeeds.length),
+                                    _buildStatItem('게시물', canSeeContent ? _userFeFeedsCount() : 0),
                                     GestureDetector(
                                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FollowersPage(userId: widget.userId))),
                                       child: _buildStatItem('팔로워', _userData?['followers'] ?? 0),
@@ -194,23 +182,15 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
                           const SizedBox(height: 16),
                           Text(nickname, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                           if (_userData?['bio'] != null && _userData!['bio'].toString().isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4.0),
-                              child: Text(_userData!['bio']),
-                            ),
+                            Padding(padding: const EdgeInsets.only(top: 4.0), child: Text(_userData!['bio'])),
                           const SizedBox(height: 20),
-                          
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
                               onPressed: () async {
-                                if (_isFollowing) {
-                                  await profileManager.unfollowUser(widget.userId);
-                                } else {
-                                  await profileManager.followUser(widget.userId);
-                                }
-                                _checkFollowStatus();
-                                _loadUserData();
+                                if (_isFollowing) { await profileManager.unfollowUser(widget.userId); }
+                                else { await profileManager.followUser(widget.userId); }
+                                _loadAllData();
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _isFollowing ? Colors.grey[200] : AppColors.primaryGreen,
@@ -226,57 +206,50 @@ class _OtherUserProfileViewState extends State<OtherUserProfileView> {
                     ),
                   ),
                   const SliverToBoxAdapter(child: Divider(height: 1)),
-                  SliverPadding(
-                    padding: const EdgeInsets.all(2),
-                    sliver: _userFeeds.isEmpty
-                        ? const SliverToBoxAdapter(
-                            child: Padding(
-                              padding: EdgeInsets.all(60.0),
-                              child: Center(child: Text('게시물이 없습니다.', style: TextStyle(color: Colors.grey))),
+                  
+                  if (!canSeeContent)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(60.0),
+                        child: Column(
+                          children: [
+                            const Icon(Icons.lock_outline, size: 64, color: Colors.grey),
+                            const SizedBox(height: 16),
+                            const Text('비공개 계정입니다', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                            const SizedBox(height: 8),
+                            const Text('사진을 보려면 팔로우하세요.', style: TextStyle(color: Colors.grey)),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.all(2),
+                      sliver: _userFeeds.isEmpty
+                          ? const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(60.0), child: Center(child: Text('게시물이 없습니다.'))))
+                          : SliverGrid(
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  final item = _userFeeds[index];
+                                  return GestureDetector(
+                                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WalkDetailView(docId: item.walkId, walkData: item.toWalkDataMap()))),
+                                    child: Container(color: Colors.grey[200], child: item.imageUrls.isNotEmpty ? Image.network(item.imageUrls.first, fit: BoxFit.cover) : const Icon(Icons.pets, color: Colors.white)),
+                                  );
+                                },
+                                childCount: _userFeeds.length,
+                              ),
                             ),
-                          )
-                        : SliverGrid(
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3,
-                              crossAxisSpacing: 2,
-                              mainAxisSpacing: 2,
-                            ),
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) {
-                                final item = _userFeeds[index];
-                                final hasImage = item.imageUrls.isNotEmpty;
-                                return GestureDetector(
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => WalkDetailView(docId: item.walkId, walkData: item.toWalkDataMap()),
-                                    ),
-                                  ),
-                                  child: Container(
-                                    color: Colors.grey[200],
-                                    child: hasImage 
-                                        ? Image.network(item.imageUrls.first, fit: BoxFit.cover)
-                                        : const Center(child: Icon(Icons.pets, color: Colors.white)),
-                                  ),
-                                );
-                              },
-                              childCount: _userFeeds.length,
-                            ),
-                          ),
-                  ),
+                    ),
                 ],
               ),
             ),
     );
   }
 
+  int _userFeFeedsCount() => _userFeeds.length;
+
   Widget _buildStatItem(String label, int count) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(count.toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-      ],
-    );
+    return Column(mainAxisSize: MainAxisSize.min, children: [Text(count.toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)), Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey))]);
   }
 }
