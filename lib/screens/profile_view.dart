@@ -228,15 +228,10 @@ class _ProfileViewState extends State<ProfileView> {
 
         return DefaultTabController(
           length: 2,
-          child: RefreshIndicator(
-            onRefresh: () async {
-              await profileManager.refresh();
-              await _loadMyFeeds(profile.uid);
-              await _updateFilteredCounts(profile.uid);
-            },
-            child: Scaffold(
-              body: NestedScrollView(
-                headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          child: Scaffold(
+            body: NestedScrollView(
+              physics: const AlwaysScrollableScrollPhysics(), // Pull-to-Refresh를 위해 필수
+              headerSliverBuilder: (context, innerBoxIsScrolled) => [
                   SliverAppBar(
                     title: Text(profile.nickname, style: const TextStyle(fontWeight: FontWeight.bold)),
                     pinned: true,
@@ -260,11 +255,24 @@ class _ProfileViewState extends State<ProfileView> {
                 ],
                 body: TabBarView(
                   children: [
-                    _buildMyPostsGrid(), 
-                    _buildSettingsList(profile, profileManager)
+                    RefreshIndicator(
+                      onRefresh: () async {
+                        await profileManager.refresh();
+                        await _loadMyFeeds(profile.uid);
+                        await _updateFilteredCounts(profile.uid);
+                      },
+                      child: _buildMyPostsGrid(),
+                    ),
+                    RefreshIndicator(
+                      onRefresh: () async {
+                        await profileManager.refresh();
+                        await _loadMyFeeds(profile.uid);
+                        await _updateFilteredCounts(profile.uid);
+                      },
+                      child: _buildSettingsList(profile, profileManager),
+                    ),
                   ],
                 ),
-              ),
             ),
           ),
         );
