@@ -5,6 +5,7 @@ import '../providers/user_auth_state.dart';
 import '../models/user_profile.dart';
 import '../utils/theme_config.dart';
 import '../services/google_signin_handler.dart';
+import '../services/authentication_handler.dart';
 import '../services/block_service.dart';
 import '../services/follow_service.dart';
 import '../services/feed_service.dart';
@@ -13,7 +14,7 @@ import '../screens/social/blocked_users_list.dart';
 import '../screens/followers_page.dart';
 import '../screens/following_page.dart';
 import 'walk_detail_view.dart';
-import 'landing_page.dart'; // 추가
+import 'landing_page.dart';
 
 class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
@@ -26,6 +27,7 @@ class _ProfileViewState extends State<ProfileView> {
   final BlockService _blockService = BlockService();
   final FollowService _followService = FollowService();
   final FeedService _feedService = FeedService();
+  final UserAuthenticationService _authService = UserAuthenticationService();
   
   List<FeedItem> _myFeeds = [];
   int? _filteredFollowingCount;
@@ -53,9 +55,7 @@ class _ProfileViewState extends State<ProfileView> {
       final result = await _feedService.loadPublicFeed(likeStatusMap: {});
       final filtered = result.items.where((item) => item.userId == userId).toList();
       if (mounted) setState(() => _myFeeds = filtered);
-    } catch (e) {
-      print('내 피드 로드 오류: $e');
-    }
+    } catch (e) {}
   }
 
   Future<void> _updateFilteredCounts(String? userId) async {
@@ -74,7 +74,6 @@ class _ProfileViewState extends State<ProfileView> {
     } catch (e) {}
   }
 
-  /// 로그아웃 및 소개화면 이동
   Future<void> _handleLogout() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -83,26 +82,101 @@ class _ProfileViewState extends State<ProfileView> {
         content: const Text('정말 로그아웃하시겠습니까?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true), 
-            child: const Text('로그아웃', style: TextStyle(color: AppColors.error)),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('로그아웃', style: TextStyle(color: AppColors.error))),
         ],
       ),
     );
 
     if (confirmed == true && mounted) {
-      // 1. 실제 로그아웃 처리
       await GoogleSignInHandler().signOut();
-      
       if (mounted) {
-        // 2. 모든 화면 스택을 제거하고 LandingPage(소개 화면)로 이동
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LandingPage()),
-          (route) => false,
-        );
+        Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const LandingPage()), (route) => false);
       }
     }
+  }
+
+  void _showChangePasswordDialog() {
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool isLoading = false;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('비밀번호 변경', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Container( // 너비 및 높이 조절을 위한 컨테이너
+            width: double.maxFinite,
+            child: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: currentPasswordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(labelText: '현재 비밀번호', hintText: '기존 비밀번호 입력'),
+                      validator: (v) => (v == null || v.isEmpty) ? '필수 입력 사항입니다.' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: newPasswordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(labelText: '변경 비밀번호', hintText: '새 비밀번호 입력'),
+                      validator: (v) {
+                        if (v == null || v.length < 6) return '6자 이상 입력해주세요.';
+                        if (v == currentPasswordController.text) return '기존과 다른 비밀번호를 입력하세요.'; // 간소화
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: confirmPasswordController,
+                      obscureText: true,
+                      decoration: const InputDecoration(labelText: '변경 비밀번호 확인', hintText: '새 비밀번호 다시 입력'),
+                      validator: (v) {
+                        if (v != newPasswordController.text) return '비밀번호가 일치하지 않습니다.';
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: isLoading ? null : () => Navigator.pop(context), child: const Text('취소')),
+            ElevatedButton(
+              onPressed: isLoading ? null : () async {
+                if (formKey.currentState!.validate()) {
+                  setDialogState(() => isLoading = true);
+                  try {
+                    await _authService.updatePassword(
+                      currentPassword: currentPasswordController.text,
+                      newPassword: newPasswordController.text,
+                    );
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('비밀번호가 성공적으로 변경되었습니다.')));
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('Exception: ', '')), backgroundColor: AppColors.error));
+                    }
+                  } finally {
+                    if (context.mounted) setDialogState(() => isLoading = false);
+                  }
+                }
+              },
+              child: isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('변경하기'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -110,9 +184,7 @@ class _ProfileViewState extends State<ProfileView> {
     return Consumer2<ProfileStateManager, UserAuthState>(
       builder: (context, profileManager, authState, child) {
         final profile = profileManager.profile;
-        if (_isInitialLoading || profile == null) {
-          return const Center(child: CircularProgressIndicator());
-        }
+        if (_isInitialLoading || profile == null) return const Center(child: CircularProgressIndicator());
 
         return DefaultTabController(
           length: 2,
@@ -131,23 +203,15 @@ class _ProfileViewState extends State<ProfileView> {
               child: Column(
                 children: [
                   _buildProfileHeader(profile, profileManager),
-                  
                   const TabBar(
                     indicatorColor: Colors.black87,
                     labelColor: Colors.black87,
                     unselectedLabelColor: Colors.grey,
-                    tabs: [
-                      Tab(icon: Icon(Icons.grid_on)),
-                      Tab(icon: Icon(Icons.settings)),
-                    ],
+                    tabs: [Tab(icon: Icon(Icons.grid_on)), Tab(icon: Icon(Icons.settings))],
                   ),
-
                   Expanded(
                     child: TabBarView(
-                      children: [
-                        _buildMyPostsGrid(), 
-                        _buildSettingsList(profile, profileManager),
-                      ],
+                      children: [_buildMyPostsGrid(), _buildSettingsList(profile, profileManager)],
                     ),
                   ),
                 ],
@@ -169,10 +233,8 @@ class _ProfileViewState extends State<ProfileView> {
             children: [
               CircleAvatar(
                 radius: 45,
-                backgroundImage: (profile.photoUrl != null && profile.photoUrl!.isNotEmpty)
-                    ? NetworkImage(profile.photoUrl!) : null,
-                child: (profile.photoUrl == null || profile.photoUrl!.isEmpty)
-                    ? const Icon(Icons.person, size: 45) : null,
+                backgroundImage: (profile.photoUrl != null && profile.photoUrl!.isNotEmpty) ? NetworkImage(profile.photoUrl!) : null,
+                child: (profile.photoUrl == null || profile.photoUrl!.isEmpty) ? const Icon(Icons.person, size: 45) : null,
               ),
               const SizedBox(width: 30),
               Expanded(
@@ -189,23 +251,13 @@ class _ProfileViewState extends State<ProfileView> {
           ),
           const SizedBox(height: 16),
           Text(profile.nickname, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          if (profile.bio.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(profile.bio),
-            ),
+          if (profile.bio.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(profile.bio)),
           const SizedBox(height: 20),
-          
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EditProfilePage(profile: profile, profileManager: profileManager))),
-              style: OutlinedButton.styleFrom(
-                backgroundColor: Colors.grey[100],
-                side: BorderSide.none,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-              ),
+              style: OutlinedButton.styleFrom(backgroundColor: Colors.grey[100], side: BorderSide.none, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), padding: const EdgeInsets.symmetric(vertical: 10)),
               child: const Text('프로필 수정', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
             ),
           ),
@@ -217,44 +269,23 @@ class _ProfileViewState extends State<ProfileView> {
   Widget _buildStatItem(String label, int count, VoidCallback? onTap) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(
-        children: [
-          Text(count.toString(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          Text(label, style: const TextStyle(fontSize: 13)),
-        ],
-      ),
+      child: Column(children: [Text(count.toString(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), Text(label, style: const TextStyle(fontSize: 13))]),
     );
   }
 
   Widget _buildMyPostsGrid() {
     if (_myFeeds.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.camera_alt_outlined, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text('아직 게시물이 없습니다', style: TextStyle(color: Colors.grey, fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
-        ),
-      );
+      return const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.camera_alt_outlined, size: 64, color: Colors.grey), SizedBox(height: 16), Text('아직 게시물이 없습니다', style: TextStyle(color: Colors.grey, fontSize: 18, fontWeight: FontWeight.bold))]));
     }
     return GridView.builder(
       padding: const EdgeInsets.all(1),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3, crossAxisSpacing: 1, mainAxisSpacing: 1,
-      ),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 1, mainAxisSpacing: 1),
       itemCount: _myFeeds.length,
       itemBuilder: (context, index) {
         final item = _myFeeds[index];
         return GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WalkDetailView(docId: item.walkId, walkData: item.toWalkDataMap()))),
-          child: Container(
-            color: Colors.grey[200],
-            child: item.imageUrls.isNotEmpty 
-                ? Image.network(item.imageUrls.first, fit: BoxFit.cover)
-                : const Icon(Icons.pets, color: Colors.white),
-          ),
+          child: Container(color: Colors.grey[200], child: item.imageUrls.isNotEmpty ? Image.network(item.imageUrls.first, fit: BoxFit.cover) : const Icon(Icons.pets, color: Colors.white)),
         );
       },
     );
@@ -269,21 +300,20 @@ class _ProfileViewState extends State<ProfileView> {
             icon: Icons.map_outlined,
             title: '탐색 위치 표시',
             subtitle: profile.locationEnabled ? '다른 사용자에게 내 위치가 보입니다' : '내 위치가 숨겨져 있습니다',
-            trailing: Switch(
-              value: profile.locationEnabled,
-              onChanged: (val) => profileManager.updateLocationEnabled(val),
-              activeColor: AppColors.primaryGreen,
-            ),
+            trailing: Switch(value: profile.locationEnabled, onChanged: (val) => profileManager.updateLocationEnabled(val), activeColor: AppColors.primaryGreen),
           ),
           _buildSettingTile(
             icon: Icons.lock_outline,
             title: '프로필 비공개',
             subtitle: profile.isPrivate ? '팔로워만 내 정보를 볼 수 있습니다' : '모든 사용자가 내 정보를 볼 수 있습니다',
-            trailing: Switch(
-              value: profile.isPrivate,
-              onChanged: (val) => profileManager.updateIsPrivate(val),
-              activeColor: AppColors.primaryGreen,
-            ),
+            trailing: Switch(value: profile.isPrivate, onChanged: (val) => profileManager.updateIsPrivate(val), activeColor: AppColors.primaryGreen),
+          ),
+          ListTile(
+            leading: const Icon(Icons.password_outlined),
+            title: const Text('비밀번호 변경'),
+            subtitle: const Text('보안을 위해 비밀번호를 주기적으로 변경하세요'),
+            trailing: const Icon(Icons.chevron_right, size: 20),
+            onTap: _showChangePasswordDialog,
           ),
         ]),
         const SizedBox(height: 16),
@@ -292,11 +322,7 @@ class _ProfileViewState extends State<ProfileView> {
             icon: Icons.notifications_none,
             title: '알림 설정',
             subtitle: profile.notificationsEnabled ? '활성화됨' : '비활성화됨',
-            trailing: Switch(
-              value: profile.notificationsEnabled,
-              onChanged: (val) => profileManager.updateNotificationsEnabled(val),
-              activeColor: AppColors.primaryGreen,
-            ),
+            trailing: Switch(value: profile.notificationsEnabled, onChanged: (val) => profileManager.updateNotificationsEnabled(val), activeColor: AppColors.primaryGreen),
           ),
           ListTile(
             leading: const Icon(Icons.block_flipped),
@@ -307,7 +333,7 @@ class _ProfileViewState extends State<ProfileView> {
           ListTile(
             leading: const Icon(Icons.logout, color: AppColors.error),
             title: const Text('로그아웃', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
-            onTap: _handleLogout, // 수정됨
+            onTap: _handleLogout,
           ),
           ListTile(
             leading: const Icon(Icons.person_remove_outlined, color: Colors.grey),
@@ -319,56 +345,12 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
-  void _showDeleteAccountDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('회원 탈퇴', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text(
-          '정말 탈퇴하시겠습니까?\n탈퇴 시 모든 산책 기록과 프로필 정보가 영구적으로 삭제되며 복구할 수 없습니다.',
-          style: TextStyle(fontSize: 14),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              _handleDeleteAccount();
-            },
-            child: const Text('탈퇴하기', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _handleDeleteAccount() async {
-    try {
-      await GoogleSignInHandler().signOut();
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LandingPage()),
-          (route) => false,
-        );
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('회원 탈퇴가 완료되었습니다.')));
-      }
-    } catch (e) {}
-  }
-
   Widget _buildSettingGroup(String title, List<Widget> children) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey)),
-        ),
-        Card(
-          elevation: 0,
-          color: Colors.grey[50],
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: Column(children: children),
-        ),
+        Padding(padding: const EdgeInsets.only(left: 4, bottom: 8), child: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey))),
+        Card(elevation: 0, color: Colors.grey[50], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), child: Column(children: children)),
       ],
     );
   }
@@ -390,5 +372,35 @@ class _ProfileViewState extends State<ProfileView> {
   void _showFollowingList(BuildContext context, ProfileStateManager profileManager) {
     if (profileManager.profile == null) return;
     Navigator.push(context, MaterialPageRoute(builder: (context) => FollowingPage(userId: profileManager.profile!.uid)));
+  }
+
+  void _showDeleteAccountDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('회원 탈퇴', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text('정말 탈퇴하시겠습니까?\n탈퇴 시 모든 산책 기록과 프로필 정보가 영구적으로 삭제되며 복구할 수 없습니다.', style: TextStyle(fontSize: 14)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              _handleDeleteAccount();
+            },
+            child: const Text('탈퇴하기', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleDeleteAccount() async {
+    try {
+      await GoogleSignInHandler().signOut();
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const LandingPage()), (route) => false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('회원 탈퇴가 완료되었습니다.')));
+      }
+    } catch (e) {}
   }
 }
