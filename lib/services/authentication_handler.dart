@@ -12,6 +12,38 @@ class UserAuthenticationService {
   Stream<User?> get authStateChanges => _auth.authStateChanges();
   bool get isAuthenticated => currentUser != null;
 
+  /// 회원 탈퇴 (데이터 및 계정 삭제)
+  Future<void> deleteAccount() async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('로그인이 필요합니다.');
+
+    final uid = user.uid;
+
+    try {
+      // 1. Firestore 프로필 데이터 삭제
+      await _firestore.collection('profiles').doc(uid).delete();
+      
+      // 2. 닉네임 인덱스 삭제 (선택 사항이지만 데이터 정리를 위해 추천)
+      final profileDoc = await _firestore.collection('profiles').doc(uid).get();
+      if (profileDoc.exists) {
+        final nickname = profileDoc.data()?['nickname'] as String?;
+        if (nickname != null) {
+          await _firestore.collection('nickname_index').doc(nickname.toLowerCase()).delete();
+        }
+      }
+
+      // 3. Firebase Auth 계정 삭제
+      await user.delete();
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        throw Exception('보안을 위해 다시 로그인한 후 탈퇴를 진행해주세요.');
+      }
+      throw Exception(e.message ?? '탈퇴 처리 중 오류가 발생했습니다.');
+    } catch (e) {
+      throw Exception('오류가 발생했습니다: $e');
+    }
+  }
+
   /// 비밀번호 변경 (재인증 포함)
   Future<void> updatePassword({
     required String currentPassword,
@@ -104,10 +136,8 @@ class UserAuthenticationService {
     }
   }
 
-  /// 비밀번호 재설정 이메일 전송 (계정 존재 여부 확인 추가)
   Future<void> sendPasswordResetEmail(String email) async {
     try {
-      // 1. Firestore에서 해당 이메일을 가진 사용자가 있는지 먼저 확인
       final querySnapshot = await _firestore
           .collection('profiles')
           .where('email', isEqualTo: email.trim())
@@ -115,11 +145,8 @@ class UserAuthenticationService {
           .get();
 
       if (querySnapshot.docs.isEmpty) {
-        // 보안상 이유로 Firebase Auth가 직접 알려주지 않는 '없는 계정' 에러를 수동으로 처리
         throw Exception('등록되지 않은 이메일 계정입니다.');
       }
-
-      // 2. 계정이 존재할 때만 이메일 발송
       await _auth.sendPasswordResetEmail(email: email.trim());
     } on FirebaseAuthException catch (e) {
       throw _handleAuthError(e);
